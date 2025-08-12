@@ -1,16 +1,15 @@
 package service
 
 import (
-	"github.com/google/uuid"
 	"github.com/syrlramadhan/api-bendahara-inovdes/dto"
 	"github.com/syrlramadhan/api-bendahara-inovdes/repository"
 )
 
 type IuranService interface {
 	AddIuran(iuran dto.IuranRequest) (string, error)
-	UpdateIuran(id int64, iuran dto.IuranRequest) error
+	UpdateIuran(id string, iuran dto.IuranRequest) error
 	GetAllIuran() ([]dto.IuranResponse, error)
-	GetIuranById(id int64) (dto.IuranResponse, error)
+	GetIuranById(id string) (dto.IuranResponse, error)
 	DeleteIuran(id int64) error
 }
 
@@ -23,17 +22,18 @@ func NewIuranService(repo repository.IuranRepository) IuranService {
 }
 
 func (s *iuranService) AddIuran(iuran dto.IuranRequest) (string, error) {
-	// Generate UUID baru
-	newID := uuid.New().String()
-	iuran.ID = newID // pastikan dto.IuranRequest punya field ID bertipe string
+	// Karena ID bertipe int64 dan biasanya auto increment di DB,
+	// cukup panggil Create(iuran), lalu ambil ID dari DB jika perlu.
+
 	err := s.iuranRepo.Create(iuran)
 	if err != nil {
 		return "", err
 	}
-	return newID, nil
+	// Jika ingin mengembalikan ID, ambil dari DB setelah insert
+	return "", nil
 }
 
-func (s *iuranService) UpdateIuran(id int64, iuran dto.IuranRequest) error {
+func (s *iuranService) UpdateIuran(id string, iuran dto.IuranRequest) error {
 	return s.iuranRepo.Update(id, iuran)
 }
 
@@ -41,7 +41,7 @@ func (s *iuranService) GetAllIuran() ([]dto.IuranResponse, error) {
 	return s.iuranRepo.GetAll()
 }
 
-func (s *iuranService) GetIuranById(id int64) (dto.IuranResponse, error) {
+func (s *iuranService) GetIuranById(id string) (dto.IuranResponse, error) {
 	return s.iuranRepo.GetByID(id)
 }
 

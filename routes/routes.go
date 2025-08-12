@@ -66,7 +66,7 @@ func Routes(db *sql.DB, port string) {
 	// iuran
 	iuranRepo := repository.NewIuranRepo(db)
 	iuranService := service.NewIuranService(iuranRepo)
-	iuranController := controller.NewIuranController(iuranService)
+	iuranController := controller.NewIuranController(iuranService) // return type: controller.IuranController
 
 	router.POST("/api/iuran/add", iuranController.AddIuran)
 	router.PUT("/api/iuran/update/:id", iuranController.UpdateIuran)

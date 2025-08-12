@@ -7,9 +7,9 @@ import (
 
 type IuranRepository interface {
 	Create(iuran dto.IuranRequest) (error)
-	Update(id int64, iuran dto.IuranRequest) error
+	Update(id string, iuran dto.IuranRequest) error
 	GetAll() ([]dto.IuranResponse, error)
-	GetByID(id int64) (dto.IuranResponse, error)
+	GetByID(id string) (dto.IuranResponse, error)
 	Delete(id int64) error
 }
 
@@ -22,7 +22,7 @@ func NewIuranRepo(db *sql.DB) IuranRepository {
 }
 
 func (r *iuranRepository) Create(iuran dto.IuranRequest) (error) {
-	query := `INSERT INTO iuran (nama, jumlah, tanggal, keterangan) VALUES (?, ?, ?, ?)`
+	query := `INSERT INTO iuran (id, nama, jumlah, tanggal, keterangan) VALUES (uuid(), ?, ?, ?, ?)`
 	_, err := r.db.Exec(query, iuran.Nama, iuran.Jumlah, iuran.Tanggal, iuran.Keterangan)
 	if err != nil {
 		return err
@@ -30,7 +30,7 @@ func (r *iuranRepository) Create(iuran dto.IuranRequest) (error) {
 	return nil
 }
 
-func (r *iuranRepository) Update(id int64, iuran dto.IuranRequest) error {
+func (r *iuranRepository) Update(id string, iuran dto.IuranRequest) error {
 	query := `UPDATE iuran SET nama=?, jumlah=?, tanggal=?, keterangan=? WHERE id=?`
 	_, err := r.db.Exec(query, iuran.Nama, iuran.Jumlah, iuran.Tanggal, iuran.Keterangan, id)
 	return err
@@ -56,7 +56,7 @@ func (r *iuranRepository) GetAll() ([]dto.IuranResponse, error) {
 	return iurans, nil
 }
 
-func (r *iuranRepository) GetByID(id int64) (dto.IuranResponse, error) {
+func (r *iuranRepository) GetByID(id string) (dto.IuranResponse, error) {
 	query := `SELECT id, nama, jumlah, tanggal, keterangan FROM iuran WHERE id=?`
 	var i dto.IuranResponse
 	err := r.db.QueryRow(query, id).Scan(&i.ID, &i.Nama, &i.Jumlah, &i.Tanggal, &i.Keterangan)

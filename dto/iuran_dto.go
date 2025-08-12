@@ -7,10 +7,12 @@ type IuranRequest struct {
 	Keterangan  string  `json:"keterangan"`
 }
 
+
 type IuranResponse struct {
-	ID          int64   `json:"id"`
-	Nama        string  `json:"nama"`
-	Jumlah      float64 `json:"jumlah"`
-	Tanggal     string  `json:"tanggal"`
-	Keterangan  string  `json:"keterangan"`
+    ID         string `json:"id"`
+    Nama       string `json:"nama"`
+    Jumlah     int    `json:"jumlah"`
+    Tanggal    string `json:"tanggal"`
+    Keterangan string `json:"keterangan"`
+    Message    string `json:"message,omitempty"`
 }
