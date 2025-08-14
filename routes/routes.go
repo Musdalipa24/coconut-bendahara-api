@@ -64,15 +64,24 @@ func Routes(db *sql.DB, port string) {
 	router.GET("/api/laporan/range", laporanKeuanganController.GetLaporanByDateRange)
 
 	// iuran
-	iuranRepo := repository.NewIuranRepo(db)
-	iuranService := service.NewIuranService(iuranRepo)
-	iuranController := controller.NewIuranController(iuranService) // return type: controller.IuranController
+	// iuranRepo := repository.NewIuranRepo(db)
+	// iuranService := service.NewIuranService(iuranRepo)
+	// iuranController := controller.NewIuranController(iuranService)
 
-	router.POST("/api/iuran/add", iuranController.AddIuran)
-	router.PUT("/api/iuran/update/:id", iuranController.UpdateIuran)
-	router.GET("/api/iuran/getall", iuranController.GetAllIuran)
-	router.GET("/api/iuran/get/:id", iuranController.GetIuranById)
-	router.DELETE("/api/iuran/delete/:id", iuranController.DeleteIuran)
+	// router.POST("/api/iuran/add", iuranController.AddIuran)
+	// router.PUT("/api/iuran/update/:id", iuranController.UpdateIuran)
+	// router.GET("/api/iuran/getall", iuranController.GetAllIuran)
+	// router.GET("/api/iuran/get/:id", iuranController.GetIuranById)
+	// router.DELETE("/api/iuran/delete/:id", iuranController.DeleteIuran)
+
+	iuranRepo := repository.NewIuranRepository()
+	iuranService := service.NewIuranService(iuranRepo, db)
+	iuranController := controller.NewIuranController(iuranService)
+
+	router.POST("/api/member/add", iuranController.CreateMember)
+	router.GET("/api/member/getall", iuranController.GetAllMembers)
+	router.GET("/api/member/get/:id", iuranController.GetMemberById)
+	router.PUT("/api/member/update/:id_member", iuranController.UpdateIuran)
 
 	// file uploads
 	router.ServeFiles("/api/uploads/*filepath", http.Dir("./uploads/"))

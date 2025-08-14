@@ -17,6 +17,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+type AdminService interface {
+	SignUp(ctx context.Context, adminRequest dto.AdminRequest) (dto.AdminResponse, error)
+	SignIn(ctx context.Context, loginRequest dto.LoginRequest) (string, error)
+	GetAdminByNik(ctx context.Context, nik string) (dto.AdminResponse, error)
+	GenerateJWT(email string) (string, error)
+}
+
 type adminServiceImpl struct {
 	AdminRepo repository.AdminRepo
 	DB        *sql.DB

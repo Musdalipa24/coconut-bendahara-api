@@ -9,9 +9,9 @@
 vendor/
 
 # Konfigurasi lingkungan
-# .env
-# .env.local
-# .env.*.local
+.env
+.env.local
+.env.*.local
 
 # Go build cache
 *.log

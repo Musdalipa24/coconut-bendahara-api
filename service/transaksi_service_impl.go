@@ -10,6 +10,11 @@ import (
 	"github.com/syrlramadhan/api-bendahara-inovdes/util"
 )
 
+type TransactionService interface {
+	GetAllTransaction(ctx context.Context) ([]dto.TransactionResponse, error)
+	GetLastTransaction(ctx context.Context) ([]dto.TransactionResponse, error)
+}
+
 type transactionServiceImpl struct {
 	TransactionRepo repository.TransaksiRepo
 	DB              *sql.DB

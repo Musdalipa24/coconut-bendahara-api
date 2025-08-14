@@ -18,6 +18,15 @@ import (
 	"github.com/syrlramadhan/api-bendahara-inovdes/util"
 )
 
+type PemasukanService interface {
+	AddPemasukan(ctx context.Context, r *http.Request, pemasukanRequest dto.PemasukanRequest) (dto.PemasukanResponse, error)
+	UpdatePemasukan(ctx context.Context, r *http.Request, pemasukanRequest dto.PemasukanRequest, no string) (dto.PemasukanResponse, error)
+	GetById(ctx context.Context, id string) (dto.PemasukanResponse, error)
+	DeletePemasukan(ctx context.Context, id string) (dto.PemasukanResponse, error)
+	GetPemasukan(ctx context.Context, page int, pageSize int) (dto.PemasukanPaginationResponse, error)
+	GetPemasukanByDateRange(ctx context.Context, startDate, endDate string, page int, pageSize int) (dto.PemasukanPaginationResponse, error)
+}
+
 type pemasukanServiceImpl struct {
 	PemasukanRepo repository.PemasukanRepo
 	DB            *sql.DB
@@ -115,11 +124,11 @@ func (s *pemasukanServiceImpl) AddPemasukan(ctx context.Context, r *http.Request
 	// Buat objek Pemasukan
 	pemasukan := model.Pemasukan{
 		Id:         uuid.New().String(),
-		Tanggal:    tanggal, // Gunakan tanggal yang sudah di-parse
+		Tanggal:    tanggal,
 		Kategori:   pemasukanRequest.Kategori,
 		Keterangan: pemasukanRequest.Keterangan,
 		Nominal:    pemasukanRequest.Nominal,
-		Nota:       pemasukanRequest.Nota, // Bisa kosong jika tidak ada file
+		Nota:       pemasukanRequest.Nota,
 	}
 
 	// Tambahkan pemasukan ke database
@@ -221,11 +230,11 @@ func (s *pemasukanServiceImpl) UpdatePemasukan(ctx context.Context, r *http.Requ
 	// Buat objek Pemasukan
 	pemasukan := model.Pemasukan{
 		Id:         uuid.New().String(),
-		Tanggal:    tanggal, // Gunakan tanggal yang sudah di-parse
+		Tanggal:    tanggal,
 		Kategori:   pemasukanRequest.Kategori,
 		Keterangan: pemasukanRequest.Keterangan,
 		Nominal:    pemasukanRequest.Nominal,
-		Nota:       pemasukanRequest.Nota, // Bisa kosong jika tidak ada file
+		Nota:       pemasukanRequest.Nota,
 	}
 
 	// Simpan perubahan ke database

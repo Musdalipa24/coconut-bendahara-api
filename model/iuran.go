@@ -1,12 +1,27 @@
 package model
 
-import "time"
+import "database/sql"
 
 type Iuran struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Kode      string    `json:"kode"`
-	Nama      string    `json:"nama_warga"`
-	Jumlah    float64   `json:"jumlah"`
-	Status    string    `json:"status"` // Lunas, Belum Lunas
-	CreatedAt time.Time `json:"created_at"`
+	IdIuran  sql.NullString
+	Periode  sql.NullString
+	MingguKe sql.NullInt64
+}
+
+type PembayaranIuran struct {
+	IdPembayaran sql.NullString
+	IdMember     sql.NullString
+	Status       sql.NullString
+	TanggalBayar sql.NullString
+	Iuran        Iuran
+}
+
+type Member struct {
+	IdMember         string
+	NRA              string
+	Nama             string
+	Status           string
+	CreatedAt        string
+	UpdatedAt        string
+	PembayaranIurans []PembayaranIuran
 }

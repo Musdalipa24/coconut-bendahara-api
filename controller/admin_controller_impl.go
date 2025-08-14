@@ -10,6 +10,12 @@ import (
 	"github.com/syrlramadhan/api-bendahara-inovdes/util"
 )
 
+type AdminController interface {
+	SignUp(w http.ResponseWriter, r *http.Request, _ httprouter.Params)
+	SignIn(w http.ResponseWriter, r *http.Request, _ httprouter.Params)
+	FindByNik(w http.ResponseWriter, r *http.Request, ps httprouter.Params)
+}
+
 type adminControllerImpl struct {
 	AdminService service.AdminService
 }

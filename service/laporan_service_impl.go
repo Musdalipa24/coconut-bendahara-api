@@ -10,6 +10,15 @@ import (
 	"github.com/syrlramadhan/api-bendahara-inovdes/util"
 )
 
+type LaporanKeuanganService interface {
+	GetAllLaporan(ctx context.Context) ([]dto.LaporanKeuanganResponse, error)
+	GetLastBalance(ctx context.Context) (int64, error)
+	GetTotalIncome(ctx context.Context) (uint64, error)
+	GetTotalExpenditure(ctx context.Context) (uint64, error)
+	GetLaporanByDateRange(ctx context.Context, startDate string, endDate string) ([]dto.LaporanKeuanganResponse, error)
+}
+
+
 type laporanKeuanganServiceImpl struct {
 	LaporanRepo repository.LaporanKeuanganRepo
 	DB          *sql.DB

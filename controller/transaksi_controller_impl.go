@@ -8,6 +8,11 @@ import (
 	"github.com/syrlramadhan/api-bendahara-inovdes/service"
 )
 
+type TransactionController interface {
+	GetAllTransaction(w http.ResponseWriter, r *http.Request, _ httprouter.Params)
+	GetLastTransaction(w http.ResponseWriter, r *http.Request, _ httprouter.Params)
+}
+
 type transactionControllerImpl struct {
 	TransactionService service.TransactionService
 }
