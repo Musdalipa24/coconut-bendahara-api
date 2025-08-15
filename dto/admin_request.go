@@ -1,13 +1,16 @@
 package dto
 
 type AdminRequest struct {
-	Nik      string `json:"nik"`
 	Username string `json:"username"`
 	Password string `json:"password"`
-	Role     string `json:"role"`
 }
 
 type LoginRequest struct {
-	Nik      string `json:"nik"`
+	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+type UpdateAdminRequest struct {
+	OldPassword string `json:"old_password"`
+	Password    string `json:"password"`
 }

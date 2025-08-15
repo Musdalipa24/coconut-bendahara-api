@@ -20,7 +20,8 @@ func Routes(db *sql.DB, port string) {
 
 	router.POST("/api/admin/daftar", adminController.SignUp)
 	router.POST("/api/admin/login", adminController.SignIn)
-	router.GET("/api/admin/:nik", adminController.FindByNik)
+	router.GET("/api/admin/:username", adminController.FindByUsername)
+	router.PUT("/api/admin/update/:username", adminController.UpdateAdmin)
 
 	// pemasukan
 	pemasukanRepo := repository.NewPemasukanRepo()

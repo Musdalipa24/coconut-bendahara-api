@@ -13,7 +13,8 @@ import (
 type AdminController interface {
 	SignUp(w http.ResponseWriter, r *http.Request, _ httprouter.Params)
 	SignIn(w http.ResponseWriter, r *http.Request, _ httprouter.Params)
-	FindByNik(w http.ResponseWriter, r *http.Request, ps httprouter.Params)
+	FindByUsername(w http.ResponseWriter, r *http.Request, ps httprouter.Params)
+	UpdateAdmin(w http.ResponseWriter, r *http.Request, ps httprouter.Params)
 }
 
 type adminControllerImpl struct {
@@ -53,12 +54,27 @@ func (a adminControllerImpl) SignIn(w http.ResponseWriter, r *http.Request, _ ht
 }
 
 // FindByNik implements AdminController.
-func (a adminControllerImpl) FindByNik(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	nik := ps.ByName("nik")
-	responseDTO, err := a.AdminService.GetAdminByNik(r.Context(), nik)
+func (a adminControllerImpl) FindByUsername(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	username := ps.ByName("username")
+	responseDTO, err := a.AdminService.GetAdminByUsername(r.Context(), username)
 	if err != nil {
 		helper.WriteJSONError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
 	helper.WriteJSONSuccess(w, responseDTO, "get admin successfully")
+}
+
+// UpdateAdmin implements AdminController.
+func (a adminControllerImpl) UpdateAdmin(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	username := ps.ByName("username")
+	adminRequest := dto.UpdateAdminRequest{}
+	util.ReadFromRequestBody(r, &adminRequest)
+
+	responseDTO, err := a.AdminService.UpdateAdmin(r.Context(), adminRequest, username)
+	if err != nil {
+		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	helper.WriteJSONSuccess(w, responseDTO, "update admin successfully")
 }

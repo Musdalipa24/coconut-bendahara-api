@@ -8,10 +8,8 @@ import (
 func ConvertAdminToResponseDTO(admin model.Admin) dto.AdminResponse {
 	return dto.AdminResponse{
 		Id:       admin.Id,
-		Nik:      admin.Nik,
 		Username: admin.Username,
 		Password: admin.Password,
-		Role:     admin.Role,
 	}
 }
 
