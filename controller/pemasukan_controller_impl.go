@@ -34,12 +34,12 @@ func (s *pemasukanControllerImpl) AddPemasukan(w http.ResponseWriter, r *http.Re
 	pemasukanRequest := dto.PemasukanRequest{}
 	// util.ReadFromRequestBody(r, &pemasukanRequest)
 
-	responseDTO, err := s.PemasukanService.AddPemasukan(r.Context(), r, pemasukanRequest)
+	responseDTO, code, err := s.PemasukanService.AddPemasukan(r.Context(), r, pemasukanRequest)
 	if err != nil {
-		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		helper.WriteJSONError(w, code, err.Error())
 		return
 	}
-	helper.WriteJSONSuccess(w, responseDTO, "successfull added")
+	helper.WriteJSONSuccess(w, responseDTO, code, "successfull added")
 }
 
 // UpdatePemasukan implements PemasukanController.
@@ -48,12 +48,12 @@ func (s *pemasukanControllerImpl) UpdatePemasukan(w http.ResponseWriter, r *http
 	pemasukanRequest := dto.PemasukanRequest{}
 	// util.ReadFromRequestBody(r, &pemasukanRequest)
 
-	responseDTO, err := s.PemasukanService.UpdatePemasukan(r.Context(), r, pemasukanRequest, id)
+	responseDTO, code, err := s.PemasukanService.UpdatePemasukan(r.Context(), r, pemasukanRequest, id)
 	if err != nil {
 		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	helper.WriteJSONSuccess(w, responseDTO, "successfull updated")
+	helper.WriteJSONSuccess(w, responseDTO, code, "successfull updated")
 }
 
 // GetPemasukan implements PemasukanController.
@@ -74,40 +74,42 @@ func (s *pemasukanControllerImpl) GetPemasukan(w http.ResponseWriter, r *http.Re
 
 	var responseDTO dto.PemasukanPaginationResponse
 	var err error
+	var code int
 
 	// Jika start_date dan end_date disediakan, gunakan GetPemasukanByDateRange
 	if startDate != "" && endDate != "" {
-		responseDTO, err = s.PemasukanService.GetPemasukanByDateRange(r.Context(), startDate, endDate, page, pageSize)
+		responseDTO, code, err = s.PemasukanService.GetPemasukanByDateRange(r.Context(), startDate, endDate, page, pageSize)
 	} else {
 		// Jika tidak ada filter tanggal, gunakan GetPemasukan seperti sebelumnya
-		responseDTO, err = s.PemasukanService.GetPemasukan(r.Context(), page, pageSize)
+		responseDTO, code, err = s.PemasukanService.GetPemasukan(r.Context(), page, pageSize)
 	}
 
 	if err != nil {
-		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())
-		return
+		// helper.WriteJSONError(w, code, err.Error())
+		// return
+		panic(err)
 	}
-	helper.WriteJSONSuccess(w, responseDTO, "successfully get pemasukan with pagination")
+	helper.WriteJSONSuccess(w, responseDTO, code, "successfully get pemasukan with pagination")
 }
 
 // DeletePemasukan implements PemasukanController.
 func (s *pemasukanControllerImpl) DeletePemasukan(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	id := ps.ByName("id")
-	responseDTO, err := s.PemasukanService.DeletePemasukan(r.Context(), id)
+	responseDTO, code, err := s.PemasukanService.DeletePemasukan(r.Context(), id)
 	if err != nil {
-		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		helper.WriteJSONError(w, code, err.Error())
 		return
 	}
-	helper.WriteJSONSuccess(w, responseDTO, "successfull delete")
+	helper.WriteJSONSuccess(w, responseDTO, code, "successfull delete")
 }
 
 // GetById implements PemasukanController.
 func (s *pemasukanControllerImpl) GetById(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	id := ps.ByName("id")
-	responseDTO, err := s.PemasukanService.GetById(r.Context(), id)
+	responseDTO, code, err := s.PemasukanService.GetById(r.Context(), id)
 	if err != nil {
-		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		helper.WriteJSONError(w, code, err.Error())
 		return
 	}
-	helper.WriteJSONSuccess(w, responseDTO, "successfull get")
+	helper.WriteJSONSuccess(w, responseDTO, code, "successfull get")
 }

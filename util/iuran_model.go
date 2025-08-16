@@ -11,6 +11,6 @@ func ConvertIuranToResponseDTO(pembayaran model.PembayaranIuran) dto.IuranRespon
 		Periode:      pembayaran.Iuran.Periode.String,
 		MingguKe:     int(pembayaran.Iuran.MingguKe.Int64),
 		Status:       pembayaran.Status.String,
-		TanggalBayar: pembayaran.TanggalBayar.String,
+		TanggalBayar: pembayaran.TanggalBayar.Time.String(),
 	}
 }

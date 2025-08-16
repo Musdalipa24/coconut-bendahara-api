@@ -25,20 +25,20 @@ func NewTransactionController(transactionService service.TransactionService) Tra
 
 // GetAllTransaction implements TransactionController.
 func (t *transactionControllerImpl) GetAllTransaction(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	responseDTO, err := t.TransactionService.GetAllTransaction(r.Context())
+	responseDTO, code, err := t.TransactionService.GetAllTransaction(r.Context())
 	if err != nil {
-		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		helper.WriteJSONError(w, code, err.Error())
 		return
 	}
-	helper.WriteJSONSuccess(w, responseDTO, "successfully get all transaction")
+	helper.WriteJSONSuccess(w, responseDTO, code, "successfully get all transaction")
 }
 
 // GetLastTransaction implements TransactionController.
 func (t *transactionControllerImpl) GetLastTransaction(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	responseDTO, err := t.TransactionService.GetLastTransaction(r.Context())
+	responseDTO, code, err := t.TransactionService.GetLastTransaction(r.Context())
 	if err != nil {
-		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		helper.WriteJSONError(w, code, err.Error())
 		return
 	}
-	helper.WriteJSONSuccess(w, responseDTO, "successfully get transaction")
+	helper.WriteJSONSuccess(w, responseDTO, code, "successfully get transaction")
 }

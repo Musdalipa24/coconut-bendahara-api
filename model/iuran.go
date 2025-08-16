@@ -11,8 +11,11 @@ type Iuran struct {
 type PembayaranIuran struct {
 	IdPembayaran sql.NullString
 	IdMember     sql.NullString
+	IdPemasukan  sql.NullString
+	IdTransaksi  sql.NullString
 	Status       sql.NullString
-	TanggalBayar sql.NullString
+	JumlahBayar  sql.NullInt64
+	TanggalBayar sql.NullTime
 	Iuran        Iuran
 }
 

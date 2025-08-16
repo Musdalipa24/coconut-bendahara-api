@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/syrlramadhan/api-bendahara-inovdes/dto"
@@ -18,6 +19,7 @@ type IuranService interface {
 	GetAllMember(ctx context.Context) ([]dto.MemberResponse, int, error)
 	GetMemberById(ctx context.Context, id string) (dto.MemberResponse, int, error)
 	UpdateIuran(ctx context.Context, pembayaranReq dto.IuranRequest, id_member string) (dto.IuranResponse, int, error)
+	DeleteMember(ctx context.Context, id_member string) (int, error)
 }
 
 type iuranService struct {
@@ -124,97 +126,139 @@ func (i *iuranService) UpdateIuran(ctx context.Context, pembayaranReq dto.IuranR
 	}
 	defer tx.Rollback()
 
-	// Ambil pembayaran di periode+minggu_ke ini
-	getPembayaran, err := i.IuranRepo.GetIuranByPeriod(ctx, tx, pembayaranReq.Periode, pembayaranReq.MingguKe)
+	tanggalBayar, err := time.Parse("2006-01-02", pembayaranReq.TanggalBayar)
+	if err != nil {
+		return dto.IuranResponse{}, http.StatusBadRequest, fmt.Errorf("invalid tanggal_bayar format: %v", err)
+	}
+
+	// Check if a pembayaran already exists for this member, period, and week
+	getPembayaran, err := i.IuranRepo.GetIuranByPeriod(ctx, tx, pembayaranReq.Periode, pembayaranReq.MingguKe, id_member)
 	if err != nil {
 		return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to get iuran by period: %v", err)
 	}
 
+	// Fetch member (assuming it's needed for validation or additional data)
 	getMember, err := i.IuranRepo.GetMemberById(ctx, tx, id_member)
 	if err != nil {
 		return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to get member by ID: %v", err)
 	}
+	// Use getMember if needed, e.g., to check if the member exists
+	if getMember.IdMember == "" {
+		return dto.IuranResponse{}, http.StatusBadRequest, fmt.Errorf("member not found")
+	}
 
-	// =========================
-	// CASE 1: Belum ada pembayaran
-	// =========================
-	if len(getPembayaran) == 0 || getMember.IdMember == id_member {
-		// Cek apakah iuran di periode ini sudah ada
+	var iuran model.Iuran
+	var pembayaran model.PembayaranIuran // Declare outside to use in return
+	if len(getPembayaran) == 0 {
+		// No existing pembayaran, create a new iuran and pembayaran
 		getIuran, err := i.IuranRepo.GetIuranByPeriodOnly(ctx, tx, pembayaranReq.Periode, pembayaranReq.MingguKe)
 		if err != nil {
 			return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to check existing iuran: %v", err)
 		}
 
-		var iuran model.Iuran
 		if getIuran == (model.Iuran{}) {
-			// Buat iuran baru
 			newIuran := model.Iuran{
 				IdIuran:  sql.NullString{String: uuid.New().String(), Valid: true},
 				Periode:  sql.NullString{String: pembayaranReq.Periode, Valid: true},
 				MingguKe: sql.NullInt64{Int64: int64(pembayaranReq.MingguKe), Valid: true},
 			}
-
 			iuran, err = i.IuranRepo.AddIuran(ctx, tx, newIuran)
 			if err != nil {
 				return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to add iuran: %v", err)
 			}
-
 			fmt.Println("Iuran baru dibuat:", iuran)
 		} else {
-			// Gunakan iuran yang sudah ada
 			iuran = getIuran
 			fmt.Println("Menggunakan iuran yang sudah ada:", iuran)
 		}
 
-		// Buat pembayaran baru
-		pembayaran := model.PembayaranIuran{
+		pembayaran = model.PembayaranIuran{
 			IdPembayaran: sql.NullString{String: uuid.New().String(), Valid: true},
 			IdMember:     sql.NullString{String: id_member, Valid: true},
+			IdPemasukan:  sql.NullString{String: uuid.New().String(), Valid: true},
 			Status:       sql.NullString{String: pembayaranReq.Status, Valid: true},
-			TanggalBayar: sql.NullString{String: pembayaranReq.TanggalBayar, Valid: true},
+			TanggalBayar: sql.NullTime{Time: tanggalBayar, Valid: true},
 			Iuran:        iuran,
 		}
+		if pembayaranReq.Status == "belum" {
+			pembayaran.JumlahBayar = sql.NullInt64{Int64: pembayaranReq.JumlahBayar, Valid: true}
+		} else {
+			pembayaran.JumlahBayar = sql.NullInt64{Int64: 7000, Valid: true}
+		}
 
-		createdPembayaran, err := i.IuranRepo.AddPembayaran(ctx, tx, pembayaran)
+		_, err = i.IuranRepo.AddPembayaran(ctx, tx, pembayaran, getMember)
 		if err != nil {
 			return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to add pembayaran: %v", err)
 		}
-
-		if err := tx.Commit(); err != nil {
-			return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to commit transaction: %v", err)
+		fmt.Println("Pembayaran baru dibuat:", pembayaran)
+	} else {
+		getPemb, err := i.IuranRepo.GetPembayaranById(ctx, tx, pembayaran, getMember.IdMember)
+		if err != nil {
+			return dto.IuranResponse{}, http.StatusInternalServerError, err
 		}
 
-		fmt.Println("Pembayaran baru dibuat:", createdPembayaran)
-		return util.ConvertIuranToResponseDTO(createdPembayaran), http.StatusCreated, nil
-	}
+		// Update existing pembayaran
+		existing := getPembayaran[0]
+		pembayaran = model.PembayaranIuran{
+			IdPembayaran: existing.IdPembayaran,
+			IdMember:     sql.NullString{String: id_member, Valid: true},
+			IdPemasukan:  getPemb.IdPemasukan,
+			Status:       sql.NullString{String: pembayaranReq.Status, Valid: true},
+			TanggalBayar: sql.NullTime{Time: tanggalBayar, Valid: true},
+			Iuran: model.Iuran{
+				IdIuran:  existing.Iuran.IdIuran,
+				Periode:  existing.Iuran.Periode,
+				MingguKe: sql.NullInt64{Int64: int64(pembayaranReq.MingguKe), Valid: true},
+			},
+		}
 
-	// =========================
-	// CASE 2: Sudah ada pembayaran → UPDATE
-	// =========================
-	existing := getPembayaran[0] // aman karena len > 0
+		if pembayaranReq.Status == "belum" {
+			pembayaran.JumlahBayar = sql.NullInt64{Int64: pembayaranReq.JumlahBayar, Valid: true}
+		} else {
+			pembayaran.JumlahBayar = sql.NullInt64{Int64: 7000, Valid: true}
+		}
 
-	pembayaran := model.PembayaranIuran{
-		IdPembayaran: existing.IdPembayaran,
-		IdMember:     sql.NullString{String: id_member, Valid: true},
-		Status:       sql.NullString{String: pembayaranReq.Status, Valid: true},
-		TanggalBayar: sql.NullString{String: pembayaranReq.TanggalBayar, Valid: true},
-		Iuran: model.Iuran{
-			IdIuran:  existing.Iuran.IdIuran,
-			Periode:  existing.Iuran.Periode,
-			MingguKe: sql.NullInt64{Int64: int64(pembayaranReq.MingguKe), Valid: true},
-		},
-	}
-
-	updatedPembayaran, err := i.IuranRepo.UpdateStatusIuran(ctx, tx, pembayaran)
-	if err != nil {
-		return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to update iuran status: %v", err)
+		updatedPembayaran, err := i.IuranRepo.UpdateStatusIuran(ctx, tx, pembayaran, getMember)
+		if err != nil {
+			return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to update iuran status: %v", err)
+		}
+		fmt.Println("Pembayaran diperbarui:", updatedPembayaran)
+		return util.ConvertIuranToResponseDTO(updatedPembayaran), http.StatusOK, nil
 	}
 
 	if err := tx.Commit(); err != nil {
 		return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to commit transaction: %v", err)
 	}
 
-	fmt.Println("Periode", pembayaranReq.Periode, "minggu ke", pembayaranReq.MingguKe, "telah diperbarui", "id pembayaran:", updatedPembayaran.IdPembayaran.String, "status:", updatedPembayaran.Status.String, "id member:", updatedPembayaran.IdMember.String)
+	// Return the newly created pembayaran
+	return util.ConvertIuranToResponseDTO(pembayaran), http.StatusCreated, nil
+}
 
-	return util.ConvertIuranToResponseDTO(updatedPembayaran), http.StatusOK, nil
+// DeleteMember implements IuranService.
+func (i *iuranService) DeleteMember(ctx context.Context, id_member string) (int, error) {
+	tx, err := i.DB.Begin()
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("failed to start transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	member, err := i.IuranRepo.GetMemberById(ctx, tx, id_member)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("failed to get member by ID: %v", err)
+	}
+
+	if member.IdMember == "" {
+		return http.StatusBadRequest, fmt.Errorf("member not found")
+	}
+
+	err = i.IuranRepo.DeleteMember(ctx, tx, id_member)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("failed to delete member: %v", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	return http.StatusNoContent, nil
 }

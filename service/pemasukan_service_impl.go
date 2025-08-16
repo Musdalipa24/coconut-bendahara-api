@@ -19,12 +19,12 @@ import (
 )
 
 type PemasukanService interface {
-	AddPemasukan(ctx context.Context, r *http.Request, pemasukanRequest dto.PemasukanRequest) (dto.PemasukanResponse, error)
-	UpdatePemasukan(ctx context.Context, r *http.Request, pemasukanRequest dto.PemasukanRequest, no string) (dto.PemasukanResponse, error)
-	GetById(ctx context.Context, id string) (dto.PemasukanResponse, error)
-	DeletePemasukan(ctx context.Context, id string) (dto.PemasukanResponse, error)
-	GetPemasukan(ctx context.Context, page int, pageSize int) (dto.PemasukanPaginationResponse, error)
-	GetPemasukanByDateRange(ctx context.Context, startDate, endDate string, page int, pageSize int) (dto.PemasukanPaginationResponse, error)
+	AddPemasukan(ctx context.Context, r *http.Request, pemasukanRequest dto.PemasukanRequest) (dto.PemasukanResponse, int, error)
+	UpdatePemasukan(ctx context.Context, r *http.Request, pemasukanRequest dto.PemasukanRequest, no string) (dto.PemasukanResponse, int, error)
+	GetById(ctx context.Context, id string) (dto.PemasukanResponse, int, error)
+	DeletePemasukan(ctx context.Context, id string) (dto.PemasukanResponse, int, error)
+	GetPemasukan(ctx context.Context, page int, pageSize int) (dto.PemasukanPaginationResponse, int, error)
+	GetPemasukanByDateRange(ctx context.Context, startDate, endDate string, page int, pageSize int) (dto.PemasukanPaginationResponse, int, error)
 }
 
 type pemasukanServiceImpl struct {
@@ -40,11 +40,11 @@ func NewPemasukanService(pemasukanRepo repository.PemasukanRepo, db *sql.DB) Pem
 }
 
 // AddPemasukan implements PemasukanService.
-func (s *pemasukanServiceImpl) AddPemasukan(ctx context.Context, r *http.Request, pemasukanRequest dto.PemasukanRequest) (dto.PemasukanResponse, error) {
+func (s *pemasukanServiceImpl) AddPemasukan(ctx context.Context, r *http.Request, pemasukanRequest dto.PemasukanRequest) (dto.PemasukanResponse, int, error) {
 	// Parse multipart form dengan batas ukuran 10MB
 	err := r.ParseMultipartForm(10 << 20)
 	if err != nil {
-		return dto.PemasukanResponse{}, fmt.Errorf("failed to parse form: %v", err)
+		return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to parse form: %v", err)
 	}
 
 	// Ambil nilai dari form
@@ -56,13 +56,13 @@ func (s *pemasukanServiceImpl) AddPemasukan(ctx context.Context, r *http.Request
 	// Parse tanggal dari string ke time.Time
 	tanggal, err := time.Parse("2006-01-02 15:04", tanggalStr)
 	if err != nil {
-		return dto.PemasukanResponse{}, fmt.Errorf("invalid date format, expected 'YYYY-MM-DD HH:MM': %v", err)
+		return dto.PemasukanResponse{}, http.StatusBadRequest, fmt.Errorf("invalid date format, expected 'YYYY-MM-DD HH:MM': %v", err)
 	}
 
 	// Konversi nominal dari string ke uint64
 	nominal, err := strconv.ParseUint(nominalStr, 10, 64)
 	if err != nil {
-		return dto.PemasukanResponse{}, fmt.Errorf("nominal must be a valid number: %v", err)
+		return dto.PemasukanResponse{}, http.StatusBadRequest, fmt.Errorf("nominal must be a valid number: %v", err)
 	}
 
 	// Buat DTO request
@@ -95,14 +95,14 @@ func (s *pemasukanServiceImpl) AddPemasukan(ctx context.Context, r *http.Request
 		filePath := filepath.Join(uploadDir, fileName)
 		out, err := os.Create(filePath)
 		if err != nil {
-			return dto.PemasukanResponse{}, fmt.Errorf("failed to create file: %v", err)
+			return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to create file: %v", err)
 		}
 		defer out.Close()
 
 		// Salin file yang diunggah ke file W yang baru dibuat
 		_, err = io.Copy(out, file)
 		if err != nil {
-			return dto.PemasukanResponse{}, fmt.Errorf("failed to copy file: %v", err)
+			return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to copy file: %v", err)
 		}
 
 		// Simpan nama file ke dalam request
@@ -111,13 +111,13 @@ func (s *pemasukanServiceImpl) AddPemasukan(ctx context.Context, r *http.Request
 
 	// Validasi input (Nota sekarang opsional)
 	if pemasukanRequest.Tanggal == "" || pemasukanRequest.Kategori == "" || pemasukanRequest.Nominal == 0 {
-		return dto.PemasukanResponse{}, fmt.Errorf("date, category, or nominal can't be empty")
+		return dto.PemasukanResponse{}, http.StatusBadRequest, fmt.Errorf("date, category, or nominal can't be empty")
 	}
 
 	// Mulai transaksi database
 	tx, err := s.DB.Begin()
 	if err != nil {
-		return dto.PemasukanResponse{}, fmt.Errorf("failed to start transaction: %v", err)
+		return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to start transaction: %v", err)
 	}
 	defer util.CommitOrRollBack(tx)
 
@@ -138,19 +138,19 @@ func (s *pemasukanServiceImpl) AddPemasukan(ctx context.Context, r *http.Request
 		if fileName != "" {
 			os.Remove(filepath.Join("./uploads", fileName))
 		}
-		return dto.PemasukanResponse{}, fmt.Errorf("failed to add income: %v", err)
+		return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to add income: %v", err)
 	}
 
 	// Kembalikan respons
-	return util.ConvertPemasukanToResponseDTO(addPemasukan), nil
+	return util.ConvertPemasukanToResponseDTO(addPemasukan), http.StatusOK, nil
 }
 
 // UpdatePemasukan implements PemasukanService.
-func (s *pemasukanServiceImpl) UpdatePemasukan(ctx context.Context, r *http.Request, pemasukanRequest dto.PemasukanRequest, id string) (dto.PemasukanResponse, error) {
+func (s *pemasukanServiceImpl) UpdatePemasukan(ctx context.Context, r *http.Request, pemasukanRequest dto.PemasukanRequest, id string) (dto.PemasukanResponse, int, error) {
 	// Parse multipart form dengan batas ukuran 10MB
 	err := r.ParseMultipartForm(10 << 20)
 	if err != nil {
-		return dto.PemasukanResponse{}, fmt.Errorf("failed to parse form: %v", err)
+		return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to parse form: %v", err)
 	}
 
 	// Ambil nilai dari form
@@ -162,13 +162,13 @@ func (s *pemasukanServiceImpl) UpdatePemasukan(ctx context.Context, r *http.Requ
 	// Parse tanggal dari string ke time.Time
 	tanggal, err := time.Parse("2006-01-02 15:04", tanggalStr)
 	if err != nil {
-		return dto.PemasukanResponse{}, fmt.Errorf("invalid date format, expected 'YYYY-MM-DD HH:MM': %v", err)
+		return dto.PemasukanResponse{}, http.StatusBadRequest, fmt.Errorf("invalid date format, expected 'YYYY-MM-DD HH:MM': %v", err)
 	}
 
 	// Konversi nominal dari string ke uint64
 	nominal, err := strconv.ParseUint(nominalStr, 10, 64)
 	if err != nil {
-		return dto.PemasukanResponse{}, fmt.Errorf("nominal must be a valid number: %v", err)
+		return dto.PemasukanResponse{}, http.StatusBadRequest, fmt.Errorf("nominal must be a valid number: %v", err)
 	}
 
 	// Buat DTO request
@@ -201,14 +201,14 @@ func (s *pemasukanServiceImpl) UpdatePemasukan(ctx context.Context, r *http.Requ
 		filePath := filepath.Join(uploadDir, fileName)
 		out, err := os.Create(filePath)
 		if err != nil {
-			return dto.PemasukanResponse{}, fmt.Errorf("failed to create file: %v", err)
+			return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to create file: %v", err)
 		}
 		defer out.Close()
 
 		// Salin file yang diunggah ke file W yang baru dibuat
 		_, err = io.Copy(out, file)
 		if err != nil {
-			return dto.PemasukanResponse{}, fmt.Errorf("failed to copy file: %v", err)
+			return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to copy file: %v", err)
 		}
 
 		// Simpan nama file ke dalam request
@@ -217,13 +217,13 @@ func (s *pemasukanServiceImpl) UpdatePemasukan(ctx context.Context, r *http.Requ
 
 	// Validasi input (Nota sekarang opsional)
 	if pemasukanRequest.Tanggal == "" || pemasukanRequest.Kategori == "" || pemasukanRequest.Nominal == 0 {
-		return dto.PemasukanResponse{}, fmt.Errorf("date, category, or nominal can't be empty")
+		return dto.PemasukanResponse{}, http.StatusBadRequest, fmt.Errorf("date, category, or nominal can't be empty")
 	}
 
 	// Mulai transaksi database
 	tx, err := s.DB.Begin()
 	if err != nil {
-		return dto.PemasukanResponse{}, fmt.Errorf("failed to start transaction: %v", err)
+		return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to start transaction: %v", err)
 	}
 	defer util.CommitOrRollBack(tx)
 
@@ -240,18 +240,17 @@ func (s *pemasukanServiceImpl) UpdatePemasukan(ctx context.Context, r *http.Requ
 	// Simpan perubahan ke database
 	updatePemasukan, err := s.PemasukanRepo.UpdatePemasukan(ctx, tx, pemasukan, id)
 	if err != nil {
-		panic(err)
-		// return dto.PemasukanResponse{}, fmt.Errorf("failed to update income")
+		return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to update income")
 	}
 
-	return util.ConvertPemasukanToResponseDTO(updatePemasukan), nil
+	return util.ConvertPemasukanToResponseDTO(updatePemasukan), http.StatusOK, nil
 }
 
 // GetPemasukan implements PemasukanService.
-func (s *pemasukanServiceImpl) GetPemasukan(ctx context.Context, page int, pageSize int) (dto.PemasukanPaginationResponse, error) {
+func (s *pemasukanServiceImpl) GetPemasukan(ctx context.Context, page int, pageSize int) (dto.PemasukanPaginationResponse, int, error) {
 	tx, err := s.DB.Begin()
 	if err != nil {
-		return dto.PemasukanPaginationResponse{}, fmt.Errorf("failed to start transaction")
+		return dto.PemasukanPaginationResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to start transaction")
 	}
 	defer tx.Commit()
 
@@ -265,7 +264,7 @@ func (s *pemasukanServiceImpl) GetPemasukan(ctx context.Context, page int, pageS
 
 	pemasukan, total, err := s.PemasukanRepo.GetPemasukan(ctx, tx, page, pageSize)
 	if err != nil {
-		return dto.PemasukanPaginationResponse{}, err
+		return dto.PemasukanPaginationResponse{}, http.StatusInternalServerError, err
 	}
 
 	// Hitung total halaman
@@ -282,51 +281,51 @@ func (s *pemasukanServiceImpl) GetPemasukan(ctx context.Context, page int, pageS
 		TotalPages: totalPages,
 	}
 
-	return response, nil
+	return response, http.StatusOK, nil
 }
 
 // DeletePemasukan implements PemasukanService.
-func (s *pemasukanServiceImpl) DeletePemasukan(ctx context.Context, id string) (dto.PemasukanResponse, error) {
+func (s *pemasukanServiceImpl) DeletePemasukan(ctx context.Context, id string) (dto.PemasukanResponse, int, error) {
 	tx, err := s.DB.Begin()
 	if err != nil {
-		return dto.PemasukanResponse{}, fmt.Errorf("failed to start transaction")
+		return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to start transaction")
 	}
 	defer tx.Commit()
 
 	pemasukan, err := s.PemasukanRepo.FindById(ctx, tx, id)
 	if err != nil {
-		return dto.PemasukanResponse{}, fmt.Errorf("income not found")
+		return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("income not found")
 	}
 
 	pemasukan, err = s.PemasukanRepo.DeletePemasukan(ctx, tx, pemasukan)
 	if err != nil {
-		return dto.PemasukanResponse{}, fmt.Errorf("failed to delete income")
+		return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to delete income")
 	}
 
-	return util.ConvertPemasukanToResponseDTO(pemasukan), nil
+	return util.ConvertPemasukanToResponseDTO(pemasukan), http.StatusOK, nil
 }
 
 // GetById implements PemasukanService.
-func (s *pemasukanServiceImpl) GetById(ctx context.Context, id string) (dto.PemasukanResponse, error) {
+func (s *pemasukanServiceImpl) GetById(ctx context.Context, id string) (dto.PemasukanResponse, int, error) {
 	tx, err := s.DB.Begin()
 	if err != nil {
-		return dto.PemasukanResponse{}, fmt.Errorf("failed to start transaction")
+		return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to start transaction")
 	}
 	defer tx.Commit()
 
 	pemasukan, err := s.PemasukanRepo.FindById(ctx, tx, id)
 	if err != nil {
-		return dto.PemasukanResponse{}, fmt.Errorf("income not found")
+		return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("income not found")
 	}
 
-	return util.ConvertPemasukanToResponseDTO(pemasukan), nil
+	return util.ConvertPemasukanToResponseDTO(pemasukan), http.StatusOK, nil
 }
 
 // GetPemasukanByDateRange implements PemasukanService.
-func (s *pemasukanServiceImpl) GetPemasukanByDateRange(ctx context.Context, startDate, endDate string, page int, pageSize int) (dto.PemasukanPaginationResponse, error) {
+func (s *pemasukanServiceImpl) GetPemasukanByDateRange(ctx context.Context, startDate, endDate string, page int, pageSize int) (dto.PemasukanPaginationResponse, int, error) {
 	tx, err := s.DB.Begin()
 	if err != nil {
-		return dto.PemasukanPaginationResponse{}, fmt.Errorf("failed to start transaction: %v", err)
+		return dto.PemasukanPaginationResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to start transaction: %v", err)
 	}
 	defer util.CommitOrRollBack(tx)
 
@@ -340,22 +339,22 @@ func (s *pemasukanServiceImpl) GetPemasukanByDateRange(ctx context.Context, star
 
 	// Validasi tanggal
 	if startDate == "" || endDate == "" {
-		return dto.PemasukanPaginationResponse{}, fmt.Errorf("start_date and end_date are required")
+		return dto.PemasukanPaginationResponse{}, http.StatusBadRequest, fmt.Errorf("start_date and end_date are required")
 	}
 
 	// Parse tanggal untuk memastikan format valid
 	_, err = time.Parse("2006-01-02", startDate)
 	if err != nil {
-		return dto.PemasukanPaginationResponse{}, fmt.Errorf("invalid start_date format, expected 'YYYY-MM-DD': %v", err)
+		return dto.PemasukanPaginationResponse{}, http.StatusBadRequest, fmt.Errorf("invalid start_date format, expected 'YYYY-MM-DD': %v", err)
 	}
 	_, err = time.Parse("2006-01-02", endDate)
 	if err != nil {
-		return dto.PemasukanPaginationResponse{}, fmt.Errorf("invalid end_date format, expected 'YYYY-MM-DD': %v", err)
+		return dto.PemasukanPaginationResponse{}, http.StatusBadRequest, fmt.Errorf("invalid end_date format, expected 'YYYY-MM-DD': %v", err)
 	}
 
 	pemasukan, total, err := s.PemasukanRepo.GetPemasukanByDateRange(ctx, tx, startDate, endDate, page, pageSize)
 	if err != nil {
-		return dto.PemasukanPaginationResponse{}, err
+		return dto.PemasukanPaginationResponse{}, http.StatusInternalServerError, err
 	}
 
 	// Hitung total halaman
@@ -372,5 +371,5 @@ func (s *pemasukanServiceImpl) GetPemasukanByDateRange(ctx context.Context, star
 		TotalPages: totalPages,
 	}
 
-	return response, nil
+	return response, http.StatusOK, nil
 }

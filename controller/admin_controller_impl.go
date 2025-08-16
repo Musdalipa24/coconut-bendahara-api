@@ -32,12 +32,12 @@ func (a adminControllerImpl) SignUp(w http.ResponseWriter, r *http.Request, _ ht
 	adminRequest := dto.AdminRequest{}
 	util.ReadFromRequestBody(r, &adminRequest)
 
-	responseDTO, err := a.AdminService.SignUp(r.Context(), adminRequest)
+	responseDTO,code, err := a.AdminService.SignUp(r.Context(), adminRequest)
 	if err != nil {
-		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		helper.WriteJSONError(w, code, err.Error())
 		return
 	}
-	helper.WriteJSONSuccess(w, responseDTO, "registration successfully")
+	helper.WriteJSONSuccess(w, responseDTO, code, "registration successfully")
 }
 
 // SignIn implements AdminController.
@@ -45,23 +45,23 @@ func (a adminControllerImpl) SignIn(w http.ResponseWriter, r *http.Request, _ ht
 	loginRequest := dto.LoginRequest{}
 	util.ReadFromRequestBody(r, &loginRequest)
 
-	responseDTO, err := a.AdminService.SignIn(r.Context(), loginRequest)
+	responseDTO, code, err := a.AdminService.SignIn(r.Context(), loginRequest)
 	if err != nil {
-		helper.WriteJSONError(w, http.StatusUnauthorized, err.Error())
+		helper.WriteJSONError(w, code, err.Error())
 		return
 	}
-	helper.WriteJSONSuccess(w, responseDTO, "login successfully")
+	helper.WriteJSONSuccess(w, responseDTO, code, "registration successfully")
 }
 
 // FindByNik implements AdminController.
 func (a adminControllerImpl) FindByUsername(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	username := ps.ByName("username")
-	responseDTO, err := a.AdminService.GetAdminByUsername(r.Context(), username)
+	responseDTO, code, err := a.AdminService.GetAdminByUsername(r.Context(), username)
 	if err != nil {
-		helper.WriteJSONError(w, http.StatusUnauthorized, err.Error())
+		helper.WriteJSONError(w, code, err.Error())
 		return
 	}
-	helper.WriteJSONSuccess(w, responseDTO, "get admin successfully")
+	helper.WriteJSONSuccess(w, responseDTO, code, "get admin successfully")
 }
 
 // UpdateAdmin implements AdminController.
@@ -70,11 +70,11 @@ func (a adminControllerImpl) UpdateAdmin(w http.ResponseWriter, r *http.Request,
 	adminRequest := dto.UpdateAdminRequest{}
 	util.ReadFromRequestBody(r, &adminRequest)
 
-	responseDTO, err := a.AdminService.UpdateAdmin(r.Context(), adminRequest, username)
+	responseDTO, code, err := a.AdminService.UpdateAdmin(r.Context(), adminRequest, username)
 	if err != nil {
-		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		helper.WriteJSONError(w, code, err.Error())
 		return
 	}
 
-	helper.WriteJSONSuccess(w, responseDTO, "update admin successfully")
+	helper.WriteJSONSuccess(w, responseDTO, code, "update admin successfully")
 }

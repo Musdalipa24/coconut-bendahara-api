@@ -230,7 +230,7 @@ func (s *pemasukanRepoImpl) GetPemasukan(ctx context.Context, tx *sql.Tx, page i
 
 		// Konversi tanggalRaw ke time.Time
 		tanggalStr := string(tanggalRaw)
-		parsedTime, err := time.Parse("2006-01-02 15:04:05", tanggalStr)
+		parsedTime, err := time.Parse(time.RFC3339, tanggalStr)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to parse tanggal: %v", err)
 		}

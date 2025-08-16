@@ -16,6 +16,7 @@ type IuranController interface {
 	GetAllMembers(w http.ResponseWriter, r *http.Request, _ httprouter.Params)
 	GetMemberById(w http.ResponseWriter, r *http.Request, ps httprouter.Params)
 	UpdateIuran(w http.ResponseWriter, r *http.Request, ps httprouter.Params)
+	DeleteMember(w http.ResponseWriter, r *http.Request, ps httprouter.Params)
 }
 
 type IuranControllerImpl struct {
@@ -41,18 +42,19 @@ func (i *IuranControllerImpl) CreateMember(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	helper.WriteJSONSuccess(w, responseDTO, "successfully created member")
+	helper.WriteJSONSuccess(w, responseDTO, code, "successfully created member")
 }
 
 // GetAllMembers implements MemberController.
 func (i *IuranControllerImpl) GetAllMembers(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	responseDTO, code, err := i.IuranService.GetAllMember(r.Context())
 	if err != nil {
-		helper.WriteJSONError(w, code, err.Error())
-		return
+		// helper.WriteJSONError(w, code, err.Error())
+		// return
+		panic(err)
 	}
 
-	helper.WriteJSONSuccess(w, responseDTO, "successfully retrieved all members")
+	helper.WriteJSONSuccess(w, responseDTO, code, "successfully retrieved all members")
 }
 
 // GetMemberById implements MemberController.
@@ -64,7 +66,7 @@ func (i *IuranControllerImpl) GetMemberById(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	helper.WriteJSONSuccess(w, responseDTO, "successfully retrieved member by ID")
+	helper.WriteJSONSuccess(w, responseDTO, code, "successfully retrieved member by ID")
 }
 
 // UpdateIuran implements IuranController.
@@ -83,5 +85,18 @@ func (i *IuranControllerImpl) UpdateIuran(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	helper.WriteJSONSuccess(w, responseDTO, "successfully updated iuran")
+	helper.WriteJSONSuccess(w, responseDTO, code, "successfully updated iuran")
+}
+
+// DeleteMember implements IuranController.
+func (i *IuranControllerImpl) DeleteMember(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	id := ps.ByName("id_member")
+
+	code, err := i.IuranService.DeleteMember(r.Context(), id)
+	if err != nil {
+		helper.WriteJSONError(w, code, err.Error())
+		return
+	}
+
+	helper.WriteJSONSuccess(w, nil, code, "successfully deleted member")
 }

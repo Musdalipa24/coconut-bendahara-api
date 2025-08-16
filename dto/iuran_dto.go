@@ -5,6 +5,7 @@ type IuranRequest struct {
 	MingguKe     int    `json:"minggu_ke"`
 	TanggalBayar string `json:"tanggal_bayar"`
 	Status       string `json:"status"`
+	JumlahBayar  int64  `json:"jumlah_bayar"`
 }
 
 type IuranResponse struct {
@@ -12,6 +13,7 @@ type IuranResponse struct {
 	Periode      string `json:"periode"`
 	MingguKe     int    `json:"minggu_ke"`
 	Status       string `json:"status"`
+	JumlahBayar  int64  `json:"jumlah_bayar"`
 	TanggalBayar string `json:"tanggal_bayar"`
 }
 

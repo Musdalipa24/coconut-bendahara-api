@@ -64,17 +64,6 @@ func Routes(db *sql.DB, port string) {
 	router.GET("/api/laporan/pemasukan", laporanKeuanganController.GetTotalIncome)
 	router.GET("/api/laporan/range", laporanKeuanganController.GetLaporanByDateRange)
 
-	// iuran
-	// iuranRepo := repository.NewIuranRepo(db)
-	// iuranService := service.NewIuranService(iuranRepo)
-	// iuranController := controller.NewIuranController(iuranService)
-
-	// router.POST("/api/iuran/add", iuranController.AddIuran)
-	// router.PUT("/api/iuran/update/:id", iuranController.UpdateIuran)
-	// router.GET("/api/iuran/getall", iuranController.GetAllIuran)
-	// router.GET("/api/iuran/get/:id", iuranController.GetIuranById)
-	// router.DELETE("/api/iuran/delete/:id", iuranController.DeleteIuran)
-
 	iuranRepo := repository.NewIuranRepository()
 	iuranService := service.NewIuranService(iuranRepo, db)
 	iuranController := controller.NewIuranController(iuranService)
@@ -83,6 +72,7 @@ func Routes(db *sql.DB, port string) {
 	router.GET("/api/member/getall", iuranController.GetAllMembers)
 	router.GET("/api/member/get/:id", iuranController.GetMemberById)
 	router.PUT("/api/member/update/:id_member", iuranController.UpdateIuran)
+	router.DELETE("/api/member/delete/:id_member", iuranController.DeleteMember)
 
 	// file uploads
 	router.ServeFiles("/api/uploads/*filepath", http.Dir("./uploads/"))
@@ -102,7 +92,7 @@ func Routes(db *sql.DB, port string) {
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")

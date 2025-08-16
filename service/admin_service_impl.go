@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -18,11 +19,11 @@ import (
 )
 
 type AdminService interface {
-	SignUp(ctx context.Context, adminRequest dto.AdminRequest) (dto.AdminResponse, error)
-	SignIn(ctx context.Context, loginRequest dto.LoginRequest) (string, error)
-	GetAdminByUsername(ctx context.Context, username string) (dto.AdminResponse, error)
+	SignUp(ctx context.Context, adminRequest dto.AdminRequest) (dto.AdminResponse, int, error)
+	SignIn(ctx context.Context, loginRequest dto.LoginRequest) (string, int, error)
+	GetAdminByUsername(ctx context.Context, username string) (dto.AdminResponse, int, error)
 	GenerateJWT(email string) (string, error)
-	UpdateAdmin(ctx context.Context, adminRequest dto.UpdateAdminRequest, username string) (dto.AdminResponse, error)
+	UpdateAdmin(ctx context.Context, adminRequest dto.UpdateAdminRequest, username string) (dto.AdminResponse, int, error)
 }
 
 type adminServiceImpl struct {
@@ -53,16 +54,16 @@ func verifyPassword(storedHash, password string) bool {
 }
 
 // SignUp implements AdminService.
-func (a adminServiceImpl) SignUp(ctx context.Context, adminRequest dto.AdminRequest) (dto.AdminResponse, error) {
+func (a adminServiceImpl) SignUp(ctx context.Context, adminRequest dto.AdminRequest) (dto.AdminResponse, int, error) {
 	tx, err := a.DB.Begin()
 	if err != nil {
-		return dto.AdminResponse{}, fmt.Errorf("failed to start transaction: %v", err)
+		return dto.AdminResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to start transaction: %v", err)
 	}
 	defer tx.Commit()
 
 	hassedPass, err := hashPassword(adminRequest.Password)
 	if err != nil {
-		return dto.AdminResponse{}, fmt.Errorf("failed to hash password: %v", err)
+		return dto.AdminResponse{}, http.StatusBadRequest, fmt.Errorf("failed to hash password: %v", err)
 	}
 
 	admin := model.Admin{
@@ -73,10 +74,10 @@ func (a adminServiceImpl) SignUp(ctx context.Context, adminRequest dto.AdminRequ
 
 	createAdmin, err := a.AdminRepo.SignUp(ctx, tx, admin)
 	if err != nil {
-		return dto.AdminResponse{}, fmt.Errorf("failed to register admin: %v", err)
+		return dto.AdminResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to register admin: %v", err)
 	}
 
-	return util.ConvertAdminToResponseDTO(createAdmin), nil
+	return util.ConvertAdminToResponseDTO(createAdmin), http.StatusOK, nil
 }
 
 type Claims struct {
@@ -106,82 +107,82 @@ func (a adminServiceImpl) GenerateJWT(username string) (string, error) {
 }
 
 // SignIn implements AdminService.
-func (a adminServiceImpl) SignIn(ctx context.Context, loginRequest dto.LoginRequest) (string, error) {
+func (a adminServiceImpl) SignIn(ctx context.Context, loginRequest dto.LoginRequest) (string, int, error) {
 	if loginRequest.Username == "" || loginRequest.Password == "" {
-		return "", fmt.Errorf("username or password can't be empty")
+		return "", http.StatusBadRequest, fmt.Errorf("username or password can't be empty")
 	}
 	tx, err := a.DB.Begin()
 	if err != nil {
-		return "", fmt.Errorf("failed to start transaction: %v", err)
+		return "", http.StatusInternalServerError, fmt.Errorf("failed to start transaction: %v", err)
 	}
 	defer tx.Commit()
 
 	admin, err := a.AdminRepo.FindByUsername(ctx, tx, loginRequest.Username)
 	if err != nil {
-		return "", fmt.Errorf("invalid username or password: %v", err)
+		return "", http.StatusInternalServerError, fmt.Errorf("invalid username or password: %v", err)
 	}
 
 	if verifyPassword(admin.Password, loginRequest.Password) {
 		fmt.Println("Login berhasil!")
 	} else {
-		return "", fmt.Errorf("invalid username or password")
+		return "", http.StatusBadRequest, fmt.Errorf("invalid username or password")
 	}
 
 	token, err := a.GenerateJWT(loginRequest.Username)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate token: %v", err)
+		return "", http.StatusUnauthorized, fmt.Errorf("failed to generate token: %v", err)
 	}
 
-	return token, nil
+	return token, http.StatusOK, nil
 }
 
 // GetAdminByNik implements AdminService.
-func (a adminServiceImpl) GetAdminByUsername(ctx context.Context, username string) (dto.AdminResponse, error) {
+func (a adminServiceImpl) GetAdminByUsername(ctx context.Context, username string) (dto.AdminResponse, int, error) {
 	tx, err := a.DB.Begin()
 	if err != nil {
-		return dto.AdminResponse{}, fmt.Errorf("failed to start transaction: %v", err)
+		return dto.AdminResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to start transaction: %v", err)
 	}
 	defer util.CommitOrRollBack(tx)
 
 	admin, err := a.AdminRepo.FindByUsername(ctx, tx, username)
 	if err != nil {
-		return dto.AdminResponse{}, fmt.Errorf("admin with username %s not found: %v", username, err)
+		return dto.AdminResponse{}, http.StatusInternalServerError, fmt.Errorf("admin with username %s not found: %v", username, err)
 	}
 
-	return util.ConvertAdminToResponseDTO(admin), nil
+	return util.ConvertAdminToResponseDTO(admin), http.StatusOK, nil
 }
 
 // UpdateAdmin implements AdminService.
-func (a adminServiceImpl) UpdateAdmin(ctx context.Context, adminRequest dto.UpdateAdminRequest, username string) (dto.AdminResponse, error) {
+func (a adminServiceImpl) UpdateAdmin(ctx context.Context, adminRequest dto.UpdateAdminRequest, username string) (dto.AdminResponse, int, error) {
 	tx, err := a.DB.Begin()
 	if err != nil {
-		return dto.AdminResponse{}, fmt.Errorf("failed to start transaction: %v", err)
+		return dto.AdminResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to start transaction: %v", err)
 	}
 	defer util.CommitOrRollBack(tx)
 
 	admin, err := a.AdminRepo.FindByUsername(ctx, tx, username)
 	if err != nil {
-		return dto.AdminResponse{}, fmt.Errorf("admin with username %s not found: %v", username, err)
+		return dto.AdminResponse{}, http.StatusInternalServerError, fmt.Errorf("admin with username %s not found: %v", username, err)
 	}
 
 	if adminRequest.OldPassword != "" && !verifyPassword(admin.Password, adminRequest.OldPassword) {
-		return dto.AdminResponse{}, fmt.Errorf("old password is incorrect")
+		return dto.AdminResponse{}, http.StatusBadRequest, fmt.Errorf("old password is incorrect")
 	}
 
 	admin.Password = adminRequest.Password
 	if admin.Password == "" {
-		return dto.AdminResponse{}, fmt.Errorf("password can't be empty")
+		return dto.AdminResponse{}, http.StatusBadRequest, fmt.Errorf("password can't be empty")
 	}
 	hassedPass, err := hashPassword(admin.Password)
 	if err != nil {
-		return dto.AdminResponse{}, fmt.Errorf("failed to hash password: %v", err)
+		return dto.AdminResponse{}, http.StatusBadRequest, fmt.Errorf("failed to hash password: %v", err)
 	}
 	admin.Password = hassedPass
 
 	updatedAdmin, err := a.AdminRepo.UpdateAdmin(ctx, tx, admin)
 	if err != nil {
-		return dto.AdminResponse{}, fmt.Errorf("failed to update admin: %v", err)
+		return dto.AdminResponse{}, http.StatusBadRequest, fmt.Errorf("failed to update admin: %v", err)
 	}
 
-	return util.ConvertAdminToResponseDTO(updatedAdmin), nil
+	return util.ConvertAdminToResponseDTO(updatedAdmin), http.StatusOK, nil
 }

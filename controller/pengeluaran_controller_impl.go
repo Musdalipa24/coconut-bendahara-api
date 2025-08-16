@@ -36,7 +36,7 @@ func (p *pengeluaranControllerImpl) AddPengeluaran(w http.ResponseWriter, r *htt
 		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	helper.WriteJSONSuccess(w, responseDTO, "successfully added expenses")
+	helper.WriteJSONSuccess(w, responseDTO, http.StatusOK, "successfully added expenses")
 }
 
 // UpdatePengeluaran implements PengeluaranController.
@@ -49,7 +49,7 @@ func (s *pengeluaranControllerImpl) UpdatePengeluaran(w http.ResponseWriter, r *
 		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	helper.WriteJSONSuccess(w, responseDTO, "successfully updated expenses")
+	helper.WriteJSONSuccess(w, responseDTO, http.StatusOK, "successfully updated expenses")
 }
 
 // GetPengeluaran implements PengeluaranController.
@@ -83,7 +83,7 @@ func (s *pengeluaranControllerImpl) GetPengeluaran(w http.ResponseWriter, r *htt
 		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	helper.WriteJSONSuccess(w, responseDTO, "successfully get pengeluaran with pagination")
+	helper.WriteJSONSuccess(w, responseDTO, http.StatusOK, "successfully get pengeluaran with pagination")
 }
 
 // DeletePengeluaran implements PengeluaranController.
@@ -94,7 +94,7 @@ func (s *pengeluaranControllerImpl) DeletePengeluaran(w http.ResponseWriter, r *
 		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	helper.WriteJSONSuccess(w, responseDTO, "successfully deleted expenses")
+	helper.WriteJSONSuccess(w, responseDTO, http.StatusNoContent, "successfully deleted expenses")
 }
 
 // GetById implements PengeluaranController.
@@ -105,5 +105,5 @@ func (s *pengeluaranControllerImpl) GetById(w http.ResponseWriter, r *http.Reque
 		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	helper.WriteJSONSuccess(w, responseDTO, "successfully get expenses")
+	helper.WriteJSONSuccess(w, responseDTO, http.StatusOK, "successfully get expenses")
 }

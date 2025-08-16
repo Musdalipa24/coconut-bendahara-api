@@ -26,7 +26,7 @@ func ConnectToDatabase() (db *sql.DB, err error) {
 	dbHost := os.Getenv("DB_HOST")
 	dbPort := os.Getenv("DB_PORT")
 
-	mysql := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", dbUser, dbPass, dbHost, dbPort, dbName)
+	mysql := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true", dbUser, dbPass, dbHost, dbPort, dbName)
 	db, err = sql.Open("mysql", mysql)
 	if err != nil {
 		helper.WriteJSONError(w, http.StatusInternalServerError, err.Error())

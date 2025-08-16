@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/http"
 
 	"github.com/syrlramadhan/api-bendahara-inovdes/dto"
 	"github.com/syrlramadhan/api-bendahara-inovdes/repository"
@@ -11,13 +12,12 @@ import (
 )
 
 type LaporanKeuanganService interface {
-	GetAllLaporan(ctx context.Context) ([]dto.LaporanKeuanganResponse, error)
-	GetLastBalance(ctx context.Context) (int64, error)
-	GetTotalIncome(ctx context.Context) (uint64, error)
-	GetTotalExpenditure(ctx context.Context) (uint64, error)
-	GetLaporanByDateRange(ctx context.Context, startDate string, endDate string) ([]dto.LaporanKeuanganResponse, error)
+	GetAllLaporan(ctx context.Context) ([]dto.LaporanKeuanganResponse, int, error)
+	GetLastBalance(ctx context.Context) (int64, int, error)
+	GetTotalIncome(ctx context.Context) (uint64, int, error)
+	GetTotalExpenditure(ctx context.Context) (uint64, int, error)
+	GetLaporanByDateRange(ctx context.Context, startDate string, endDate string) ([]dto.LaporanKeuanganResponse, int, error)
 }
-
 
 type laporanKeuanganServiceImpl struct {
 	LaporanRepo repository.LaporanKeuanganRepo
@@ -32,48 +32,48 @@ func NewLaporanKeuanganService(laporanRepo repository.LaporanKeuanganRepo, db *s
 }
 
 // GetAllLaporan implements LaporanKeuanganService.
-func (l *laporanKeuanganServiceImpl) GetAllLaporan(ctx context.Context) ([]dto.LaporanKeuanganResponse, error) {
+func (l *laporanKeuanganServiceImpl) GetAllLaporan(ctx context.Context) ([]dto.LaporanKeuanganResponse, int, error) {
 	tx, err := l.DB.Begin()
 	if err != nil {
-		return []dto.LaporanKeuanganResponse{}, fmt.Errorf("failed to start transaction")
+		return []dto.LaporanKeuanganResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to start transaction")
 	}
 	defer util.CommitOrRollBack(tx)
 
 	laporan, err := l.LaporanRepo.GetAllLaporan(ctx, tx)
 	if err != nil {
-		return []dto.LaporanKeuanganResponse{}, fmt.Errorf("failed to get financial statements")
+		return []dto.LaporanKeuanganResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to get financial statements")
 	}
 
-	return util.ConvertLaporanToListResponseDTO(laporan), nil
+	return util.ConvertLaporanToListResponseDTO(laporan), http.StatusOK, nil
 }
 
 // GetLastBalance implements LaporanKeuanganService.
-func (l *laporanKeuanganServiceImpl) GetLastBalance(ctx context.Context) (int64, error) {
+func (l *laporanKeuanganServiceImpl) GetLastBalance(ctx context.Context) (int64, int, error) {
 	tx, err := l.DB.Begin()
 	if err != nil {
-		return 0, fmt.Errorf("failed to start transaction")
+		return 0, http.StatusInternalServerError, fmt.Errorf("failed to start transaction")
 	}
 	defer util.CommitOrRollBack(tx)
 
 	saldo, err := l.LaporanRepo.GetLastBalance(ctx, tx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get last balance: %v", err)
+		return 0, http.StatusInternalServerError, fmt.Errorf("failed to get last balance: %v", err)
 	}
 
-	return saldo, nil
+	return saldo, http.StatusOK, nil
 }
 
 // GetTotalExpenditure implements LaporanKeuanganService.
-func (l *laporanKeuanganServiceImpl) GetTotalExpenditure(ctx context.Context) (uint64, error) {
+func (l *laporanKeuanganServiceImpl) GetTotalExpenditure(ctx context.Context) (uint64, int, error) {
 	tx, err := l.DB.Begin()
 	if err != nil {
-		return 0, fmt.Errorf("failed to start transaction")
+		return 0, http.StatusInternalServerError, fmt.Errorf("failed to start transaction")
 	}
 	defer util.CommitOrRollBack(tx)
 
 	laporan, err := l.LaporanRepo.GetAllLaporan(ctx, tx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get financial statements")
+		return 0, http.StatusInternalServerError, fmt.Errorf("failed to get financial statements")
 	}
 
 	var totalPengeluaran uint64
@@ -81,20 +81,20 @@ func (l *laporanKeuanganServiceImpl) GetTotalExpenditure(ctx context.Context) (u
 		totalPengeluaran += data.Pengeluaran
 	}
 
-	return totalPengeluaran, nil
+	return totalPengeluaran, http.StatusOK, nil
 }
 
 // GetTotalIncome implements LaporanKeuanganService.
-func (l *laporanKeuanganServiceImpl) GetTotalIncome(ctx context.Context) (uint64, error) {
+func (l *laporanKeuanganServiceImpl) GetTotalIncome(ctx context.Context) (uint64, int, error) {
 	tx, err := l.DB.Begin()
 	if err != nil {
-		return 0, fmt.Errorf("failed to start transaction")
+		return 0, http.StatusInternalServerError, fmt.Errorf("failed to start transaction")
 	}
 	defer util.CommitOrRollBack(tx)
 
 	laporan, err := l.LaporanRepo.GetAllLaporan(ctx, tx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get financial statements")
+		return 0, http.StatusInternalServerError, fmt.Errorf("failed to get financial statements")
 	}
 
 	var totalPemasukan uint64
@@ -102,23 +102,23 @@ func (l *laporanKeuanganServiceImpl) GetTotalIncome(ctx context.Context) (uint64
 		totalPemasukan += data.Pemasukan
 	}
 
-	return totalPemasukan, nil
+	return totalPemasukan, http.StatusOK, nil
 }
 
-func (l *laporanKeuanganServiceImpl) GetLaporanByDateRange(ctx context.Context, startDate string, endDate string) ([]dto.LaporanKeuanganResponse, error) {
+func (l *laporanKeuanganServiceImpl) GetLaporanByDateRange(ctx context.Context, startDate string, endDate string) ([]dto.LaporanKeuanganResponse, int, error) {
 	// Mulai transaksi
 	tx, err := l.DB.Begin()
 	if err != nil {
-		return []dto.LaporanKeuanganResponse{}, fmt.Errorf("failed to start transaction")
+		return []dto.LaporanKeuanganResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to start transaction")
 	}
 	defer util.CommitOrRollBack(tx)
 
 	// Panggil repository untuk mendapatkan data laporan berdasarkan rentang tanggal
 	laporans, err := l.LaporanRepo.GetLaporanByDateRange(ctx, tx, startDate, endDate)
 	if err != nil {
-		return []dto.LaporanKeuanganResponse{}, fmt.Errorf("failed to get laporan by date range: %v", err)
+		return []dto.LaporanKeuanganResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to get laporan by date range: %v", err)
 	}
 
 	// Konversi data laporan ke DTO
-	return util.ConvertLaporanToListResponseDTO(laporans), nil
+	return util.ConvertLaporanToListResponseDTO(laporans), http.StatusOK, nil
 }
