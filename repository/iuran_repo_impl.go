@@ -486,9 +486,9 @@ func (r *iuranRepositoryImpl) GetIuranByPeriodOnly(ctx context.Context, tx *sql.
 
 // UpdateIuran implements IuranRepository.
 func (r *iuranRepositoryImpl) UpdateStatusIuran(ctx context.Context, tx *sql.Tx, pembayaran model.PembayaranIuran, member model.Member) (model.PembayaranIuran, error) {
-	query := "UPDATE iuran AS i JOIN pembayaran_iuran AS pi ON i.id_iuran = pi.id_iuran SET pi.status = ?, pi.tanggal_bayar = ?, pi.jumlah_bayar = ? WHERE pi.id_member = ? and i.periode = ? and i.minggu_ke = ?"
+	query := "UPDATE iuran AS i JOIN pembayaran_iuran AS pi ON i.id_iuran = pi.id_iuran SET pi.status = ?, pi.tanggal_bayar = ?, jumlah_bayar = ?, pi.jumlah_bayar = ? WHERE pi.id_member = ? and i.periode = ? and i.minggu_ke = ?"
 
-	_, err := tx.ExecContext(ctx, query, pembayaran.Status, pembayaran.TanggalBayar, pembayaran.JumlahBayar, pembayaran.IdMember, pembayaran.Iuran.Periode, pembayaran.Iuran.MingguKe.Int64)
+	_, err := tx.ExecContext(ctx, query, pembayaran.Status, pembayaran.TanggalBayar, pembayaran.JumlahBayar, pembayaran.JumlahBayar, pembayaran.IdMember, pembayaran.Iuran.Periode, pembayaran.Iuran.MingguKe.Int64)
 	if err != nil {
 		return model.PembayaranIuran{}, err
 	}

@@ -42,7 +42,7 @@ func (t *transactionRepoImpl) GetAllTransaction(ctx context.Context, tx *sql.Tx)
 		}
 
 		// Parsing string ke time.Time
-		transaction.Tanggal, err = time.Parse("2006-01-02 15:04:05", tanggalStr) // Sesuaikan format dengan data di database
+		transaction.Tanggal, err = time.Parse(time.RFC3339, tanggalStr) // Sesuaikan format dengan data di database
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse tanggal: %v", err)
 		}
@@ -79,7 +79,7 @@ func (t *transactionRepoImpl) GetLastTransaction(ctx context.Context, tx *sql.Tx
 		}
 
 		// Parsing string ke time.Time
-		transaction.Tanggal, err = time.Parse("2006-01-02 15:04:05", tanggalStr) // Sesuaikan format dengan data di database
+		transaction.Tanggal, err = time.Parse(time.RFC3339, tanggalStr) // Sesuaikan format dengan data di database
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse tanggal: %v", err)
 		}

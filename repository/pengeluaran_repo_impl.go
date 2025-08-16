@@ -130,7 +130,7 @@ func (s *pengeluaranRepoImpl) UpdatePengeluaran(ctx context.Context, tx *sql.Tx,
 
 	// Konversi tanggalRaw ke time.Time
 	tanggalStr := string(tanggalRaw)
-	oldTanggal, err := time.Parse("2006-01-02 15:04:05", tanggalStr)
+	oldTanggal, err := time.Parse(time.RFC3339, tanggalStr)
 	if err != nil {
 		return pengeluaran, fmt.Errorf("failed to parse old tanggal: %v", err)
 	}
@@ -235,7 +235,7 @@ func (s *pengeluaranRepoImpl) GetPengeluaran(ctx context.Context, tx *sql.Tx, pa
 
 		// Konversi tanggalRaw ke time.Time
 		tanggalStr := string(tanggalRaw)
-		parsedTime, err := time.Parse("2006-01-02 15:04:05", tanggalStr)
+		parsedTime, err := time.Parse(time.RFC3339, tanggalStr)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to parse tanggal: %v", err)
 		}
@@ -277,7 +277,7 @@ func (s *pengeluaranRepoImpl) FindById(ctx context.Context, tx *sql.Tx, id strin
 
 	// Konversi tanggalRaw ke time.Time
 	tanggalStr := string(tanggalRaw)
-	parsedTime, err := time.Parse("2006-01-02 15:04:05", tanggalStr)
+	parsedTime, err := time.Parse(time.RFC3339, tanggalStr)
 	if err != nil {
 		return pengeluaran, fmt.Errorf("failed to parse tanggal: %v", err)
 	}
@@ -311,7 +311,7 @@ func (s *pengeluaranRepoImpl) DeletePengeluaran(ctx context.Context, tx *sql.Tx,
 
 	// Konversi tanggalRaw ke time.Time
 	tanggalStr := string(tanggalRaw)
-	tanggalTime, err := time.Parse("2006-01-02 15:04:05", tanggalStr)
+	tanggalTime, err := time.Parse(time.RFC3339, tanggalStr)
 	if err != nil {
 		return pengeluaran, fmt.Errorf("failed to parse tanggal: %v", err)
 	}
@@ -419,7 +419,7 @@ func (s *pengeluaranRepoImpl) GetPengeluaranByDateRange(ctx context.Context, tx 
 
 		// Konversi tanggalRaw ke time.Time
 		tanggalStr := string(tanggalRaw)
-		parsedTime, err := time.Parse("2006-01-02 15:04:05", tanggalStr)
+		parsedTime, err := time.Parse(time.RFC3339, tanggalStr)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to parse tanggal: %v", err)
 		}

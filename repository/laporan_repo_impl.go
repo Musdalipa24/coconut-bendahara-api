@@ -48,7 +48,7 @@ func (l *laporanKeuanganRepoImpl) GetAllLaporan(ctx context.Context, tx *sql.Tx)
 		case []byte:
 			// Jika tanggal adalah []byte, parse ke time.Time
 			tanggalStr := string(v)
-			parsedTime, err := time.Parse("2006-01-02 15:04:05", tanggalStr)
+			parsedTime, err := time.Parse(time.RFC3339, tanggalStr)
 			if err != nil {
 				return laporans, fmt.Errorf("failed to parse tanggal: %v", err)
 			}
@@ -100,7 +100,7 @@ func (l *laporanKeuanganRepoImpl) GetLaporanByDateRange(ctx context.Context, tx 
 		}
 
 		// Parsing string ke time.Time
-		laporan.Tanggal, err = time.Parse("2006-01-02 15:04:05", tanggalStr) // Sesuaikan format dengan data di database
+		laporan.Tanggal, err = time.Parse(time.RFC3339, tanggalStr) // Sesuaikan format dengan data di database
 		if err != nil {
 			return laporans, fmt.Errorf("failed to parse tanggal: %v", err)
 		}

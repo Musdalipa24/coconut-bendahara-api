@@ -191,6 +191,10 @@ func (i *iuranService) UpdateIuran(ctx context.Context, pembayaranReq dto.IuranR
 			return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to add pembayaran: %v", err)
 		}
 		fmt.Println("Pembayaran baru dibuat:", pembayaran)
+		if err := tx.Commit(); err != nil {
+			return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to commit transaction: %v", err)
+		}
+		return util.ConvertIuranToResponseDTO(pembayaran), http.StatusCreated, nil
 	} else {
 		getPemb, err := i.IuranRepo.GetPembayaranById(ctx, tx, pembayaran, getMember.IdMember)
 		if err != nil {
@@ -223,15 +227,12 @@ func (i *iuranService) UpdateIuran(ctx context.Context, pembayaranReq dto.IuranR
 			return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to update iuran status: %v", err)
 		}
 		fmt.Println("Pembayaran diperbarui:", updatedPembayaran)
+
+		if err := tx.Commit(); err != nil {
+			return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to commit transaction: %v", err)
+		}
 		return util.ConvertIuranToResponseDTO(updatedPembayaran), http.StatusOK, nil
 	}
-
-	if err := tx.Commit(); err != nil {
-		return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to commit transaction: %v", err)
-	}
-
-	// Return the newly created pembayaran
-	return util.ConvertIuranToResponseDTO(pembayaran), http.StatusCreated, nil
 }
 
 // DeleteMember implements IuranService.

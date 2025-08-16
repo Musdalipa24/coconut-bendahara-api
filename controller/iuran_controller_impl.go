@@ -49,9 +49,8 @@ func (i *IuranControllerImpl) CreateMember(w http.ResponseWriter, r *http.Reques
 func (i *IuranControllerImpl) GetAllMembers(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	responseDTO, code, err := i.IuranService.GetAllMember(r.Context())
 	if err != nil {
-		// helper.WriteJSONError(w, code, err.Error())
-		// return
-		panic(err)
+		helper.WriteJSONError(w, code, err.Error())
+		return
 	}
 
 	helper.WriteJSONSuccess(w, responseDTO, code, "successfully retrieved all members")
