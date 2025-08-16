@@ -146,7 +146,7 @@ func (r *iuranRepositoryImpl) GetAllMembers(ctx context.Context, tx *sql.Tx) ([]
 			status,
 			created_at,
 			updated_at
-		FROM member ORDER BY id_member ASC
+		FROM member ORDER BY id_member DESC
 	`
 
 	rows, err := tx.QueryContext(ctx, query)
