@@ -27,7 +27,6 @@ type PengeluaranService interface {
 	GetPengeluaranByDateRange(ctx context.Context, startDate, endDate string, page int, pageSize int) (dto.PengeluaranPaginationResponse, error)
 }
 
-
 type pengeluaranServiceImpl struct {
 	PengeluaranRepo repository.PengeluaranRepo
 	DB              *sql.DB
@@ -105,9 +104,9 @@ func (s *pengeluaranServiceImpl) AddPengeluaran(ctx context.Context, r *http.Req
 	}
 	pengeluaranRequest.Nominal = uint64(nominal)
 
-	// Validasi input
-	if pengeluaranRequest.Tanggal == "" || pengeluaranRequest.Nota == "" || pengeluaranRequest.Nominal == 0 {
-		return dto.PengeluaranResponse{}, fmt.Errorf("date, note, or nominal can't be empty")
+	// Validasi input (nota adalah opsional)
+	if pengeluaranRequest.Tanggal == "" || pengeluaranRequest.Nominal == 0 {
+		return dto.PengeluaranResponse{}, fmt.Errorf("date or nominal can't be empty")
 	}
 
 	// Parsing tanggal dari string ke time.Time
@@ -230,9 +229,9 @@ func (s *pengeluaranServiceImpl) UpdatePengeluaran(ctx context.Context, r *http.
 	}
 	pengeluaranRequest.Nominal = uint64(nominal)
 
-	// Validasi input
-	if pengeluaranRequest.Tanggal == "" || pengeluaranRequest.Nota == "" || pengeluaranRequest.Nominal == 0 {
-		return dto.PengeluaranResponse{}, fmt.Errorf("date, note, or nominal can't be empty")
+	// Validasi input (nota sudah dihandle di atas)
+	if pengeluaranRequest.Tanggal == "" || pengeluaranRequest.Nominal == 0 {
+		return dto.PengeluaranResponse{}, fmt.Errorf("date or nominal can't be empty")
 	}
 
 	// Parsing tanggal dari string ke time.Time

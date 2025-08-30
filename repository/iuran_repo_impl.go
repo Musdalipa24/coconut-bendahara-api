@@ -486,9 +486,10 @@ func (r *iuranRepositoryImpl) GetIuranByPeriodOnly(ctx context.Context, tx *sql.
 
 // UpdateIuran implements IuranRepository.
 func (r *iuranRepositoryImpl) UpdateStatusIuran(ctx context.Context, tx *sql.Tx, pembayaran model.PembayaranIuran, member model.Member) (model.PembayaranIuran, error) {
-	query := "UPDATE iuran AS i JOIN pembayaran_iuran AS pi ON i.id_iuran = pi.id_iuran SET pi.status = ?, pi.tanggal_bayar = ?, jumlah_bayar = ?, pi.jumlah_bayar = ? WHERE pi.id_member = ? and i.periode = ? and i.minggu_ke = ?"
+	// PERBAIKAN: Update pembayaran_iuran langsung tanpa JOIN yang tidak perlu
+	query := "UPDATE pembayaran_iuran SET status = ?, tanggal_bayar = ?, jumlah_bayar = ? WHERE id_member = ? AND id_iuran = ?"
 
-	_, err := tx.ExecContext(ctx, query, pembayaran.Status, pembayaran.TanggalBayar, pembayaran.JumlahBayar, pembayaran.JumlahBayar, pembayaran.IdMember, pembayaran.Iuran.Periode, pembayaran.Iuran.MingguKe.Int64)
+	_, err := tx.ExecContext(ctx, query, pembayaran.Status, pembayaran.TanggalBayar, pembayaran.JumlahBayar, pembayaran.IdMember, pembayaran.Iuran.IdIuran)
 	if err != nil {
 		return model.PembayaranIuran{}, err
 	}
@@ -517,8 +518,10 @@ func (r *iuranRepositoryImpl) UpdateStatusIuran(ctx context.Context, tx *sql.Tx,
 		return model.PembayaranIuran{}, fmt.Errorf("failed to parse old tanggal: %v", err)
 	}
 
+	// Hitung selisih nominal
 	nominalDiff := int64(pembayaran.JumlahBayar.Int64) - int64(oldNominal)
 
+	// Perbarui tabel pemasukan
 	queryPemasukan := `
 		UPDATE pemasukan 
 		SET tanggal = ?, kategori = ?, keterangan = ?, nominal = ?, nota = ? 
@@ -529,6 +532,7 @@ func (r *iuranRepositoryImpl) UpdateStatusIuran(ctx context.Context, tx *sql.Tx,
 		return model.PembayaranIuran{}, fmt.Errorf("failed to update pemasukan: %v", err)
 	}
 
+	// Perbarui tabel history_transaksi
 	queryHistory := `
 		UPDATE history_transaksi 
 		SET tanggal = ?, keterangan = ?, nominal = ? 
@@ -539,47 +543,93 @@ func (r *iuranRepositoryImpl) UpdateStatusIuran(ctx context.Context, tx *sql.Tx,
 		return model.PembayaranIuran{}, fmt.Errorf("failed to update history_transaksi: %v", err)
 	}
 
-	queryLaporan := `
-		UPDATE laporan_keuangan 
-		SET tanggal = ?, keterangan = ?, pemasukan = ?, saldo = saldo + ? 
-		WHERE id_transaksi = ?
-	`
-	_, err = tx.ExecContext(ctx, queryLaporan, pembayaran.TanggalBayar, keterangan, pembayaran.JumlahBayar, nominalDiff, idTransaksi)
-	if err != nil {
-		return model.PembayaranIuran{}, fmt.Errorf("failed to update laporan_keuangan: %v", err)
-	}
-
-	queryUpdateFuture := `
-		UPDATE laporan_keuangan 
-		SET saldo = saldo + ?, pemasukan = pemasukan + ? 
-		WHERE tanggal > ?
-	`
-	_, err = tx.ExecContext(ctx, queryUpdateFuture, nominalDiff, nominalDiff, pembayaran.TanggalBayar)
-	if err != nil {
-		return model.PembayaranIuran{}, fmt.Errorf("failed to update future laporan_keuangan: %v", err)
-	}
-
-	if !oldTanggal.Equal(pembayaran.TanggalBayar.Time) {
-		// Kurangi pengaruh nominal lama pada entri setelah tanggal lama
-		queryAdjustOld := `
+	// PERBAIKAN: Update laporan_keuangan dengan benar
+	// Jika tanggal tidak berubah, hanya update nominal di record yang sama
+	if oldTanggal.Equal(pembayaran.TanggalBayar.Time) {
+		// Update record laporan_keuangan yang sama
+		queryLaporan := `
 			UPDATE laporan_keuangan 
-			SET saldo = saldo - ?, pemasukan = pemasukan - ? 
-			WHERE tanggal > ? AND tanggal <= ?
+			SET keterangan = ?, pemasukan = ?, saldo = saldo + ? 
+			WHERE id_transaksi = ?
 		`
-		_, err = tx.ExecContext(ctx, queryAdjustOld, oldNominal, oldNominal, oldTanggal, pembayaran.TanggalBayar)
+		_, err = tx.ExecContext(ctx, queryLaporan, keterangan, pembayaran.JumlahBayar, nominalDiff, idTransaksi)
 		if err != nil {
-			return model.PembayaranIuran{}, fmt.Errorf("failed to adjust laporan_keuangan for old tanggal: %v", err)
+			return model.PembayaranIuran{}, fmt.Errorf("failed to update laporan_keuangan: %v", err)
 		}
 
-		// Tambahkan pengaruh nominal baru pada entri setelah tanggal baru
-		queryAdjustNew := `
+		// Update saldo untuk semua record setelah tanggal ini
+		if nominalDiff != 0 {
+			queryUpdateFuture := `
+				UPDATE laporan_keuangan 
+				SET saldo = saldo + ? 
+				WHERE tanggal > ?
+			`
+			_, err = tx.ExecContext(ctx, queryUpdateFuture, nominalDiff, pembayaran.TanggalBayar)
+			if err != nil {
+				return model.PembayaranIuran{}, fmt.Errorf("failed to update future laporan_keuangan: %v", err)
+			}
+		}
+	} else {
+		// Jika tanggal berubah, hapus record lama dan buat record baru
+
+		// 1. Hapus record laporan_keuangan lama
+		queryDeleteOld := `
+			DELETE FROM laporan_keuangan 
+			WHERE id_transaksi = ?
+		`
+		_, err = tx.ExecContext(ctx, queryDeleteOld, idTransaksi)
+		if err != nil {
+			return model.PembayaranIuran{}, fmt.Errorf("failed to delete old laporan_keuangan: %v", err)
+		}
+
+		// 2. Update saldo untuk record setelah tanggal lama (kurangi nominal lama)
+		queryUpdateAfterOld := `
 			UPDATE laporan_keuangan 
-			SET saldo = saldo + ?, pemasukan = pemasukan + ? 
+			SET saldo = saldo - ? 
 			WHERE tanggal > ?
 		`
-		_, err = tx.ExecContext(ctx, queryAdjustNew, pembayaran.JumlahBayar, pembayaran.JumlahBayar, pembayaran.TanggalBayar)
+		_, err = tx.ExecContext(ctx, queryUpdateAfterOld, oldNominal, oldTanggal)
 		if err != nil {
-			return model.PembayaranIuran{}, fmt.Errorf("failed to adjust laporan_keuangan for new tanggal: %v", err)
+			return model.PembayaranIuran{}, fmt.Errorf("failed to update records after old date: %v", err)
+		}
+
+		// 3. Ambil saldo terakhir sebelum tanggal baru
+		var saldoSebelumnya uint64
+		querySaldo := `
+			SELECT saldo FROM laporan_keuangan 
+			WHERE tanggal <= ?
+			ORDER BY tanggal DESC
+			LIMIT 1
+		`
+		err = tx.QueryRowContext(ctx, querySaldo, pembayaran.TanggalBayar).Scan(&saldoSebelumnya)
+		if err != nil && err != sql.ErrNoRows {
+			return model.PembayaranIuran{}, fmt.Errorf("failed to fetch previous saldo: %v", err)
+		}
+
+		// 4. Hitung saldo baru
+		saldoBaru := saldoSebelumnya + uint64(pembayaran.JumlahBayar.Int64)
+
+		// 5. Insert record laporan_keuangan baru
+		idLaporan := uuid.New().String()
+		queryInsertNew := `
+			INSERT INTO laporan_keuangan 
+			(id_laporan, tanggal, keterangan, pemasukan, pengeluaran, saldo, id_transaksi)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`
+		_, err = tx.ExecContext(ctx, queryInsertNew, idLaporan, pembayaran.TanggalBayar, keterangan, pembayaran.JumlahBayar, 0, saldoBaru, idTransaksi)
+		if err != nil {
+			return model.PembayaranIuran{}, fmt.Errorf("failed to insert new laporan_keuangan: %v", err)
+		}
+
+		// 6. Update saldo untuk record setelah tanggal baru (tambah nominal baru)
+		queryUpdateAfterNew := `
+			UPDATE laporan_keuangan 
+			SET saldo = saldo + ? 
+			WHERE tanggal > ?
+		`
+		_, err = tx.ExecContext(ctx, queryUpdateAfterNew, pembayaran.JumlahBayar, pembayaran.TanggalBayar)
+		if err != nil {
+			return model.PembayaranIuran{}, fmt.Errorf("failed to update records after new date: %v", err)
 		}
 	}
 
@@ -588,11 +638,96 @@ func (r *iuranRepositoryImpl) UpdateStatusIuran(ctx context.Context, tx *sql.Tx,
 
 // DeleteMember implements IuranRepository.
 func (r *iuranRepositoryImpl) DeleteMember(ctx context.Context, tx *sql.Tx, id_member string) error {
-	query := "DELETE FROM member WHERE id_member = ?"
-	_, err := tx.ExecContext(ctx, query, id_member)
+	// PERBAIKAN: Hapus semua data terkait dengan member
+
+	// 1. Ambil semua pembayaran iuran dari member ini untuk rollback laporan keuangan
+	getPembayaran, err := r.GetIuranByMemberID(ctx, tx, id_member)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get pembayaran iuran for member: %v", err)
 	}
 
-	return err
+	// 2. Untuk setiap pembayaran, rollback laporan keuangan
+	for _, pembayaran := range getPembayaran {
+		if pembayaran.IdPemasukan.Valid {
+			// Ambil data pemasukan untuk mendapatkan nominal dan tanggal
+			var nominal uint64
+			var tanggalRaw []byte
+			var idTransaksi string
+			queryFetch := `
+				SELECT nominal, tanggal, id_transaksi 
+				FROM pemasukan 
+				WHERE id_pemasukan = ?
+			`
+			err = tx.QueryRowContext(ctx, queryFetch, pembayaran.IdPemasukan.String).Scan(&nominal, &tanggalRaw, &idTransaksi)
+			if err != nil && err != sql.ErrNoRows {
+				return fmt.Errorf("failed to fetch pemasukan data: %v", err)
+			}
+
+			if err != sql.ErrNoRows {
+				// Parse tanggal
+				tanggalStr := string(tanggalRaw)
+				tanggalTime, err := time.Parse(time.RFC3339, tanggalStr)
+				if err != nil {
+					return fmt.Errorf("failed to parse tanggal: %v", err)
+				}
+
+				// Hapus dari laporan_keuangan
+				queryDeleteLaporan := `
+					DELETE FROM laporan_keuangan 
+					WHERE id_transaksi = ?
+				`
+				_, err = tx.ExecContext(ctx, queryDeleteLaporan, idTransaksi)
+				if err != nil {
+					return fmt.Errorf("failed to delete from laporan_keuangan: %v", err)
+				}
+
+				// Update saldo untuk semua record setelah tanggal ini (kurangi nominal)
+				queryUpdateSaldo := `
+					UPDATE laporan_keuangan
+					SET saldo = saldo - ?
+					WHERE tanggal > ?
+				`
+				_, err = tx.ExecContext(ctx, queryUpdateSaldo, nominal, tanggalTime)
+				if err != nil {
+					return fmt.Errorf("failed to update future saldo: %v", err)
+				}
+
+				// Hapus dari history_transaksi
+				queryDeleteHistory := `
+					DELETE FROM history_transaksi 
+					WHERE id_transaksi = ?
+				`
+				_, err = tx.ExecContext(ctx, queryDeleteHistory, idTransaksi)
+				if err != nil {
+					return fmt.Errorf("failed to delete from history_transaksi: %v", err)
+				}
+
+				// Hapus dari pemasukan
+				queryDeletePemasukan := `
+					DELETE FROM pemasukan 
+					WHERE id_pemasukan = ?
+				`
+				_, err = tx.ExecContext(ctx, queryDeletePemasukan, pembayaran.IdPemasukan.String)
+				if err != nil {
+					return fmt.Errorf("failed to delete from pemasukan: %v", err)
+				}
+			}
+		}
+	}
+
+	// 3. Hapus semua pembayaran_iuran dari member ini
+	queryDeletePembayaran := "DELETE FROM pembayaran_iuran WHERE id_member = ?"
+	_, err = tx.ExecContext(ctx, queryDeletePembayaran, id_member)
+	if err != nil {
+		return fmt.Errorf("failed to delete pembayaran_iuran: %v", err)
+	}
+
+	// 4. Terakhir hapus member
+	queryDeleteMember := "DELETE FROM member WHERE id_member = ?"
+	_, err = tx.ExecContext(ctx, queryDeleteMember, id_member)
+	if err != nil {
+		return fmt.Errorf("failed to delete member: %v", err)
+	}
+
+	return nil
 }

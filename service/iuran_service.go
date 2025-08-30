@@ -14,6 +14,13 @@ import (
 	"github.com/syrlramadhan/api-bendahara-inovdes/util"
 )
 
+// Konstanta untuk business logic iuran
+const (
+	IURAN_NOMINAL_PENUH = 7000 // Nominal penuh untuk status lunas
+	STATUS_LUNAS        = "lunas"
+	STATUS_BELUM_LUNAS  = "belum"
+)
+
 type IuranService interface {
 	CreateMember(ctx context.Context, memberReq dto.MemberRequest) (dto.MemberResponse, int, error)
 	GetAllMember(ctx context.Context) ([]dto.MemberResponse, int, error)
@@ -131,6 +138,16 @@ func (i *iuranService) UpdateIuran(ctx context.Context, pembayaranReq dto.IuranR
 		return dto.IuranResponse{}, http.StatusBadRequest, fmt.Errorf("invalid tanggal_bayar format: %v", err)
 	}
 
+	// Validasi status iuran
+	if pembayaranReq.Status != STATUS_LUNAS && pembayaranReq.Status != STATUS_BELUM_LUNAS {
+		return dto.IuranResponse{}, http.StatusBadRequest, fmt.Errorf("status must be '%s' or '%s'", STATUS_LUNAS, STATUS_BELUM_LUNAS)
+	}
+
+	// Validasi jumlah bayar untuk status belum lunas
+	if pembayaranReq.Status == STATUS_BELUM_LUNAS && pembayaranReq.JumlahBayar <= 0 {
+		return dto.IuranResponse{}, http.StatusBadRequest, fmt.Errorf("jumlah_bayar harus lebih dari 0 untuk status '%s'", STATUS_BELUM_LUNAS)
+	}
+
 	// Check if a pembayaran already exists for this member, period, and week
 	getPembayaran, err := i.IuranRepo.GetIuranByPeriod(ctx, tx, pembayaranReq.Periode, pembayaranReq.MingguKe, id_member)
 	if err != nil {
@@ -166,10 +183,8 @@ func (i *iuranService) UpdateIuran(ctx context.Context, pembayaranReq dto.IuranR
 			if err != nil {
 				return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to add iuran: %v", err)
 			}
-			fmt.Println("Iuran baru dibuat:", iuran)
 		} else {
 			iuran = getIuran
-			fmt.Println("Menggunakan iuran yang sudah ada:", iuran)
 		}
 
 		pembayaran = model.PembayaranIuran{
@@ -180,17 +195,19 @@ func (i *iuranService) UpdateIuran(ctx context.Context, pembayaranReq dto.IuranR
 			TanggalBayar: sql.NullTime{Time: tanggalBayar, Valid: true},
 			Iuran:        iuran,
 		}
-		if pembayaranReq.Status == "belum" {
-			pembayaran.JumlahBayar = sql.NullInt64{Int64: pembayaranReq.JumlahBayar, Valid: true}
+		// PERBAIKAN: Logic business untuk nilai iuran
+		if pembayaranReq.Status == STATUS_LUNAS {
+			// Jika status lunas, otomatis isi dengan nominal penuh iuran
+			pembayaran.JumlahBayar = sql.NullInt64{Int64: IURAN_NOMINAL_PENUH, Valid: true}
 		} else {
-			pembayaran.JumlahBayar = sql.NullInt64{Int64: 7000, Valid: true}
+			// Jika status belum lunas, gunakan nilai yang diinput user
+			pembayaran.JumlahBayar = sql.NullInt64{Int64: pembayaranReq.JumlahBayar, Valid: true}
 		}
 
 		_, err = i.IuranRepo.AddPembayaran(ctx, tx, pembayaran, getMember)
 		if err != nil {
 			return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to add pembayaran: %v", err)
 		}
-		fmt.Println("Pembayaran baru dibuat:", pembayaran)
 		if err := tx.Commit(); err != nil {
 			return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to commit transaction: %v", err)
 		}
@@ -216,17 +233,19 @@ func (i *iuranService) UpdateIuran(ctx context.Context, pembayaranReq dto.IuranR
 			},
 		}
 
-		if pembayaranReq.Status == "belum" {
-			pembayaran.JumlahBayar = sql.NullInt64{Int64: pembayaranReq.JumlahBayar, Valid: true}
+		// PERBAIKAN: Logic business untuk nilai iuran
+		if pembayaranReq.Status == STATUS_LUNAS {
+			// Jika status lunas, otomatis isi dengan nominal penuh iuran
+			pembayaran.JumlahBayar = sql.NullInt64{Int64: IURAN_NOMINAL_PENUH, Valid: true}
 		} else {
-			pembayaran.JumlahBayar = sql.NullInt64{Int64: 7000, Valid: true}
+			// Jika status belum lunas, gunakan nilai yang diinput user
+			pembayaran.JumlahBayar = sql.NullInt64{Int64: pembayaranReq.JumlahBayar, Valid: true}
 		}
 
 		updatedPembayaran, err := i.IuranRepo.UpdateStatusIuran(ctx, tx, pembayaran, getMember)
 		if err != nil {
 			return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to update iuran status: %v", err)
 		}
-		fmt.Println("Pembayaran diperbarui:", updatedPembayaran)
 
 		if err := tx.Commit(); err != nil {
 			return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to commit transaction: %v", err)

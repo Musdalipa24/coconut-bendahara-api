@@ -155,50 +155,93 @@ func (s *pemasukanRepoImpl) UpdatePemasukan(ctx context.Context, tx *sql.Tx, pem
 		return pemasukan, fmt.Errorf("failed to update history_transaksi: %v", err)
 	}
 
-	// Perbarui entri laporan_keuangan yang terkait dengan transaksi ini
-	queryLaporan := `
-		UPDATE laporan_keuangan 
-		SET tanggal = ?, keterangan = ?, pemasukan = ?, saldo = saldo + ? 
-		WHERE id_transaksi = ?
-	`
-	_, err = tx.ExecContext(ctx, queryLaporan, pemasukan.Tanggal, pemasukan.Keterangan, pemasukan.Nominal, nominalDiff, idTransaksi)
-	if err != nil {
-		return pemasukan, fmt.Errorf("failed to update laporan_keuangan: %v", err)
-	}
-
-	// Perbarui saldo dan total pemasukan untuk semua entri laporan_keuangan setelah tanggal baru
-	queryUpdateFuture := `
-		UPDATE laporan_keuangan 
-		SET saldo = saldo + ?, pemasukan = pemasukan + ? 
-		WHERE tanggal > ?
-	`
-	_, err = tx.ExecContext(ctx, queryUpdateFuture, nominalDiff, nominalDiff, pemasukan.Tanggal)
-	if err != nil {
-		return pemasukan, fmt.Errorf("failed to update future laporan_keuangan: %v", err)
-	}
-
-	// Jika tanggal berubah, perbarui saldo dan pemasukan untuk entri antara tanggal lama dan baru
-	if !oldTanggal.Equal(pemasukan.Tanggal) {
-		// Kurangi pengaruh nominal lama pada entri setelah tanggal lama
-		queryAdjustOld := `
+	// PERBAIKAN: Update laporan_keuangan dengan benar
+	// Jika tanggal tidak berubah, hanya update nominal di record yang sama
+	if oldTanggal.Equal(pemasukan.Tanggal) {
+		// Update record laporan_keuangan yang sama
+		queryLaporan := `
 			UPDATE laporan_keuangan 
-			SET saldo = saldo - ?, pemasukan = pemasukan - ? 
-			WHERE tanggal > ? AND tanggal <= ?
+			SET keterangan = ?, pemasukan = ?, saldo = saldo + ? 
+			WHERE id_transaksi = ?
 		`
-		_, err = tx.ExecContext(ctx, queryAdjustOld, oldNominal, oldNominal, oldTanggal, pemasukan.Tanggal)
+		_, err = tx.ExecContext(ctx, queryLaporan, pemasukan.Keterangan, pemasukan.Nominal, nominalDiff, idTransaksi)
 		if err != nil {
-			return pemasukan, fmt.Errorf("failed to adjust laporan_keuangan for old tanggal: %v", err)
+			return pemasukan, fmt.Errorf("failed to update laporan_keuangan: %v", err)
 		}
 
-		// Tambahkan pengaruh nominal baru pada entri setelah tanggal baru
-		queryAdjustNew := `
+		// Update saldo untuk semua record setelah tanggal ini
+		if nominalDiff != 0 {
+			queryUpdateFuture := `
+				UPDATE laporan_keuangan 
+				SET saldo = saldo + ? 
+				WHERE tanggal > ?
+			`
+			_, err = tx.ExecContext(ctx, queryUpdateFuture, nominalDiff, pemasukan.Tanggal)
+			if err != nil {
+				return pemasukan, fmt.Errorf("failed to update future laporan_keuangan: %v", err)
+			}
+		}
+	} else {
+		// Jika tanggal berubah, hapus record lama dan buat record baru
+
+		// 1. Hapus record laporan_keuangan lama
+		queryDeleteOld := `
+			DELETE FROM laporan_keuangan 
+			WHERE id_transaksi = ?
+		`
+		_, err = tx.ExecContext(ctx, queryDeleteOld, idTransaksi)
+		if err != nil {
+			return pemasukan, fmt.Errorf("failed to delete old laporan_keuangan: %v", err)
+		}
+
+		// 2. Update saldo untuk record setelah tanggal lama (kurangi nominal lama)
+		queryUpdateAfterOld := `
 			UPDATE laporan_keuangan 
-			SET saldo = saldo + ?, pemasukan = pemasukan + ? 
+			SET saldo = saldo - ? 
 			WHERE tanggal > ?
 		`
-		_, err = tx.ExecContext(ctx, queryAdjustNew, pemasukan.Nominal, pemasukan.Nominal, pemasukan.Tanggal)
+		_, err = tx.ExecContext(ctx, queryUpdateAfterOld, oldNominal, oldTanggal)
 		if err != nil {
-			return pemasukan, fmt.Errorf("failed to adjust laporan_keuangan for new tanggal: %v", err)
+			return pemasukan, fmt.Errorf("failed to update records after old date: %v", err)
+		}
+
+		// 3. Ambil saldo terakhir sebelum tanggal baru
+		var saldoSebelumnya uint64
+		querySaldo := `
+			SELECT saldo FROM laporan_keuangan 
+			WHERE tanggal <= ?
+			ORDER BY tanggal DESC
+			LIMIT 1
+		`
+		err = tx.QueryRowContext(ctx, querySaldo, pemasukan.Tanggal).Scan(&saldoSebelumnya)
+		if err != nil && err != sql.ErrNoRows {
+			return pemasukan, fmt.Errorf("failed to fetch previous saldo: %v", err)
+		}
+
+		// 4. Hitung saldo baru
+		saldoBaru := saldoSebelumnya + uint64(pemasukan.Nominal)
+
+		// 5. Insert record laporan_keuangan baru
+		idLaporan := uuid.New().String()
+		queryInsertNew := `
+			INSERT INTO laporan_keuangan 
+			(id_laporan, tanggal, keterangan, pemasukan, pengeluaran, saldo, id_transaksi)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`
+		_, err = tx.ExecContext(ctx, queryInsertNew, idLaporan, pemasukan.Tanggal, pemasukan.Keterangan, pemasukan.Nominal, 0, saldoBaru, idTransaksi)
+		if err != nil {
+			return pemasukan, fmt.Errorf("failed to insert new laporan_keuangan: %v", err)
+		}
+
+		// 6. Update saldo untuk record setelah tanggal baru (tambah nominal baru)
+		queryUpdateAfterNew := `
+			UPDATE laporan_keuangan 
+			SET saldo = saldo + ? 
+			WHERE tanggal > ?
+		`
+		_, err = tx.ExecContext(ctx, queryUpdateAfterNew, pemasukan.Nominal, pemasukan.Tanggal)
+		if err != nil {
+			return pemasukan, fmt.Errorf("failed to update records after new date: %v", err)
 		}
 	}
 
@@ -364,22 +407,6 @@ func (s *pemasukanRepoImpl) DeletePemasukan(ctx context.Context, tx *sql.Tx, pem
 		return pemasukan, fmt.Errorf("failed to check rows affected for saldo update: %v", err)
 	}
 	log.Printf("Updated %d rows in laporan_keuangan for saldo with id_pemasukan %s, nominal %d, tanggal %v", rowsAffected, pemasukan.Id, nominal, tanggalTime)
-
-	// Update total pemasukan for all records after the deleted pemasukan's tanggal
-	queryUpdatePemasukan := `
-		UPDATE laporan_keuangan
-		SET pemasukan = pemasukan - ?
-		WHERE tanggal > ?
-	`
-	result, err = tx.ExecContext(ctx, queryUpdatePemasukan, nominal, tanggalTime)
-	if err != nil {
-		return pemasukan, fmt.Errorf("failed to update future pemasukan: %v", err)
-	}
-	rowsAffected, err = result.RowsAffected()
-	if err != nil {
-		return pemasukan, fmt.Errorf("failed to check rows affected for pemasukan update: %v", err)
-	}
-	log.Printf("Updated %d rows in laporan_keuangan for pemasukan with id_pemasukan %s, nominal %d, tanggal %v", rowsAffected, pemasukan.Id, nominal, tanggalTime)
 
 	return pemasukan, nil
 }

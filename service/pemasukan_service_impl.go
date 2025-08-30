@@ -227,9 +227,20 @@ func (s *pemasukanServiceImpl) UpdatePemasukan(ctx context.Context, r *http.Requ
 	}
 	defer util.CommitOrRollBack(tx)
 
-	// Buat objek Pemasukan
+	// Ambil data pemasukan lama untuk mempertahankan nota jika tidak ada file baru
+	oldPemasukan, err := s.PemasukanRepo.FindById(ctx, tx, id)
+	if err != nil {
+		return dto.PemasukanResponse{}, http.StatusInternalServerError, fmt.Errorf("pemasukan not found: %v", err)
+	}
+
+	// Jika tidak ada file nota baru yang diunggah, gunakan nota lama
+	if pemasukanRequest.Nota == "" {
+		pemasukanRequest.Nota = oldPemasukan.Nota
+	}
+
+	// Buat objek Pemasukan (gunakan id yang sudah ada, jangan buat UUID baru)
 	pemasukan := model.Pemasukan{
-		Id:         uuid.New().String(),
+		Id:         id, // Gunakan id parameter yang diterima
 		Tanggal:    tanggal,
 		Kategori:   pemasukanRequest.Kategori,
 		Keterangan: pemasukanRequest.Keterangan,
