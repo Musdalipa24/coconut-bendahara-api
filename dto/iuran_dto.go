@@ -18,15 +18,17 @@ type IuranResponse struct {
 }
 
 type MemberRequest struct {
-	NRA    string `json:"nra"`
-	Nama   string `json:"nama"`
-	Status string `json:"status"`
+	NRA     string `json:"nra"`
+	Nama    string `json:"nama"`
+	Jabatan string `json:"jabatan"`
+	Status  string `json:"status"`
 }
 
 type MemberResponse struct {
 	IdMember  string          `json:"id_member"`
 	NRA       string          `json:"nra"`
 	Nama      string          `json:"nama"`
+	Jabatan   string          `json:"jabatan"`
 	Status    string          `json:"status"`
 	Iuran     []IuranResponse `json:"iuran"`
 	CreatedAt string          `json:"created_at"`

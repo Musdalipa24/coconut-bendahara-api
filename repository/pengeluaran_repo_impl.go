@@ -38,7 +38,7 @@ func (s *pengeluaranRepoImpl) AddPengeluaran(ctx context.Context, tx *sql.Tx, pe
 	querySaldo := `
 		SELECT saldo FROM laporan_keuangan 
 		WHERE tanggal <= ?
-		ORDER BY tanggal DESC
+		ORDER BY tanggal DESC, saldo DESC
 		LIMIT 1
 	`
 	err := tx.QueryRowContext(ctx, querySaldo, pengeluaran.Tanggal).Scan(&saldoSebelumnya)
@@ -239,7 +239,7 @@ func (s *pengeluaranRepoImpl) UpdatePengeluaran(ctx context.Context, tx *sql.Tx,
 		querySaldo := `
 			SELECT saldo FROM laporan_keuangan 
 			WHERE tanggal <= ?
-			ORDER BY tanggal DESC
+			ORDER BY tanggal DESC, saldo DESC
 			LIMIT 1
 		`
 		err = tx.QueryRowContext(ctx, querySaldo, pengeluaran.Tanggal).Scan(&saldoSebelumnya)

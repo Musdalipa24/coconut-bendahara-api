@@ -61,7 +61,7 @@ func (s *pemasukanRepoImpl) AddPemasukan(ctx context.Context, tx *sql.Tx, pemasu
 	querySaldo := `
 		SELECT saldo FROM laporan_keuangan 
 		WHERE tanggal <= ?
-		ORDER BY tanggal DESC
+		ORDER BY tanggal DESC, saldo DESC
 		LIMIT 1
 	`
 	err = tx.QueryRowContext(ctx, querySaldo, pemasukan.Tanggal).Scan(&saldoSebelumnya)
@@ -210,7 +210,7 @@ func (s *pemasukanRepoImpl) UpdatePemasukan(ctx context.Context, tx *sql.Tx, pem
 		querySaldo := `
 			SELECT saldo FROM laporan_keuangan 
 			WHERE tanggal <= ?
-			ORDER BY tanggal DESC
+			ORDER BY tanggal DESC, saldo DESC
 			LIMIT 1
 		`
 		err = tx.QueryRowContext(ctx, querySaldo, pemasukan.Tanggal).Scan(&saldoSebelumnya)
@@ -331,16 +331,17 @@ func (s *pemasukanRepoImpl) DeletePemasukan(ctx context.Context, tx *sql.Tx, pem
 		return pemasukan, fmt.Errorf("id_pemasukan cannot be empty")
 	}
 
-	// Fetch id_transaksi, nominal, and tanggal from pemasukan
+	// Fetch id_transaksi, nominal, tanggal, dan kategori dari pemasukan
 	var idTransaksi string
 	var nominal int
 	var tanggalRaw []byte
+	var kategori string
 	queryFetch := `
-		SELECT id_transaksi, nominal, tanggal 
+		SELECT id_transaksi, nominal, tanggal, kategori 
 		FROM pemasukan 
 		WHERE id_pemasukan = ?
 	`
-	err := tx.QueryRowContext(ctx, queryFetch, pemasukan.Id).Scan(&idTransaksi, &nominal, &tanggalRaw)
+	err := tx.QueryRowContext(ctx, queryFetch, pemasukan.Id).Scan(&idTransaksi, &nominal, &tanggalRaw, &kategori)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return pemasukan, fmt.Errorf("pemasukan with id %s not found", pemasukan.Id)
@@ -360,7 +361,44 @@ func (s *pemasukanRepoImpl) DeletePemasukan(ctx context.Context, tx *sql.Tx, pem
 		return pemasukan, fmt.Errorf("invalid nominal value: %d", nominal)
 	}
 
-	log.Printf("Fetched pemasukan: id=%s, id_transaksi=%s, nominal=%d, tanggal=%v", pemasukan.Id, idTransaksi, nominal, tanggalTime)
+	log.Printf("Fetched pemasukan: id=%s, id_transaksi=%s, nominal=%d, tanggal=%v, kategori=%s", pemasukan.Id, idTransaksi, nominal, tanggalTime, kategori)
+
+	// Jika pemasukan terkait dengan iuran, hapus juga data pembayaran_iuran
+	if kategori == "Iuran" {
+		// Cari id_pembayaran dan id_iuran dari pembayaran_iuran yang terkait
+		var idPembayaran, idIuran string
+		queryFetchIuran := `
+			SELECT id_pembayaran, id_iuran 
+			FROM pembayaran_iuran 
+			WHERE id_pemasukan = ?
+			LIMIT 1
+		`
+		errIuran := tx.QueryRowContext(ctx, queryFetchIuran, pemasukan.Id).Scan(&idPembayaran, &idIuran)
+		if errIuran == nil {
+			// Hapus pembayaran_iuran yang berelasi
+			queryDeletePembayaran := `DELETE FROM pembayaran_iuran WHERE id_pemasukan = ?`
+			_, err = tx.ExecContext(ctx, queryDeletePembayaran, pemasukan.Id)
+			if err != nil {
+				return pemasukan, fmt.Errorf("failed to delete pembayaran_iuran: %v", err)
+			}
+			log.Printf("Deleted pembayaran_iuran (id_pembayaran=%s) linked to pemasukan %s", idPembayaran, pemasukan.Id)
+
+			// Cek apakah iuran masih memiliki pembayaran lain; jika tidak, hapus record iuran juga
+			var sisaPembayaran int
+			queryCountPembayaran := `SELECT COUNT(*) FROM pembayaran_iuran WHERE id_iuran = ?`
+			errCount := tx.QueryRowContext(ctx, queryCountPembayaran, idIuran).Scan(&sisaPembayaran)
+			if errCount == nil && sisaPembayaran == 0 {
+				queryDeleteIuran := `DELETE FROM iuran WHERE id_iuran = ?`
+				_, err = tx.ExecContext(ctx, queryDeleteIuran, idIuran)
+				if err != nil {
+					return pemasukan, fmt.Errorf("failed to delete iuran: %v", err)
+				}
+				log.Printf("Deleted iuran (id_iuran=%s) as it has no more pembayaran", idIuran)
+			}
+		} else if errIuran != sql.ErrNoRows {
+			return pemasukan, fmt.Errorf("failed to fetch pembayaran_iuran: %v", errIuran)
+		}
+	}
 
 	// Delete from laporan_keuangan
 	queryLaporan := `

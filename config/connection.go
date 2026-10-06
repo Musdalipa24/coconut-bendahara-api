@@ -43,5 +43,19 @@ func ConnectToDatabase() (db *sql.DB, err error) {
 	db.SetMaxOpenConns(10)
 	db.SetMaxIdleConns(10)
 
+	// Auto-migration for member table: jabatan and status
+	migrateMemberTable(db)
+
 	return db, nil
+}
+
+func migrateMemberTable(db *sql.DB) {
+	var colCount int
+	err := db.QueryRow("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'member' AND COLUMN_NAME = 'jabatan'").Scan(&colCount)
+	if err == nil && colCount == 0 {
+		_, _ = db.Exec("ALTER TABLE member ADD COLUMN jabatan VARCHAR(20) DEFAULT 'anggota' AFTER nama")
+		_, _ = db.Exec("UPDATE member SET jabatan = CASE WHEN LOWER(status) = 'bph' THEN 'bph' ELSE 'anggota' END")
+		_, _ = db.Exec("UPDATE member SET status = CASE WHEN LOWER(status) IN ('inactive', 'nonaktif') THEN 'nonaktif' ELSE 'aktif' END")
+		_, _ = db.Exec("ALTER TABLE member MODIFY COLUMN status VARCHAR(20) DEFAULT 'aktif'")
+	}
 }

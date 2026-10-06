@@ -22,7 +22,9 @@ type IuranRepository interface {
 	GetIuranByPeriod(ctx context.Context, tx *sql.Tx, periode string, minggu_ke int, id_member string) ([]model.PembayaranIuran, error)
 	GetIuranByPeriodOnly(ctx context.Context, tx *sql.Tx, periode string, mingguKe int) (model.Iuran, error)
 	UpdateStatusIuran(ctx context.Context, tx *sql.Tx, pembayaran model.PembayaranIuran, member model.Member) (model.PembayaranIuran, error)
+	PelunasanIuran(ctx context.Context, tx *sql.Tx, pembayaran model.PembayaranIuran, member model.Member, nominalTambahan int64) (model.PembayaranIuran, error)
 	DeleteMember(ctx context.Context, tx *sql.Tx, id_member string) error
+	ReactivateMember(ctx context.Context, tx *sql.Tx, id_member string, status string) error
 }
 
 type iuranRepositoryImpl struct {
@@ -34,9 +36,15 @@ func NewIuranRepository() IuranRepository {
 
 // AddMember implements IuranRepository.
 func (r *iuranRepositoryImpl) AddMember(ctx context.Context, tx *sql.Tx, member model.Member) (model.Member, error) {
-	query := "INSERT INTO member (id_member, nra, nama, status) VALUES (?, ?, ?, ?)"
+	if member.Jabatan == "" {
+		member.Jabatan = "anggota"
+	}
+	if member.Status == "" {
+		member.Status = "aktif"
+	}
+	query := "INSERT INTO member (id_member, nra, nama, jabatan, status) VALUES (?, ?, ?, ?, ?)"
 
-	_, err := tx.ExecContext(ctx, query, member.IdMember, member.NRA, member.Nama, member.Status)
+	_, err := tx.ExecContext(ctx, query, member.IdMember, member.NRA, member.Nama, member.Jabatan, member.Status)
 	if err != nil {
 		return model.Member{}, err
 	}
@@ -75,7 +83,7 @@ func (r *iuranRepositoryImpl) AddPembayaran(ctx context.Context, tx *sql.Tx, pem
 	querySaldo := `
 		SELECT saldo FROM laporan_keuangan 
 		WHERE tanggal <= ?
-		ORDER BY tanggal DESC
+		ORDER BY tanggal DESC, saldo DESC
 		LIMIT 1
 	`
 	err = tx.QueryRowContext(ctx, querySaldo, pembayaran.TanggalBayar).Scan(&saldoSebelumnya)
@@ -111,10 +119,10 @@ func (r *iuranRepositoryImpl) AddPembayaran(ctx context.Context, tx *sql.Tx, pem
 }
 
 // GetPembayaranById implements IuranRepository.
-func (r *iuranRepositoryImpl) GetPembayaranById(ctx context.Context, tx *sql.Tx, pembayaran model.PembayaranIuran, id_member string) (model.PembayaranIuran, error) {
-	query := "SELECT id_pembayaran, id_member, id_iuran, id_pemasukan, status, jumlah_bayar, tanggal_bayar FROM pembayaran_iuran WHERE id_member = ?"
+func (r *iuranRepositoryImpl) GetPembayaranById(ctx context.Context, tx *sql.Tx, pembayaran model.PembayaranIuran, idPembayaran string) (model.PembayaranIuran, error) {
+	query := "SELECT id_pembayaran, id_member, id_iuran, id_pemasukan, status, jumlah_bayar, tanggal_bayar FROM pembayaran_iuran WHERE id_pembayaran = ?"
 
-	row := tx.QueryRowContext(ctx, query, id_member)
+	row := tx.QueryRowContext(ctx, query, idPembayaran)
 
 	err := row.Scan(&pembayaran.IdPembayaran, &pembayaran.IdMember, &pembayaran.Iuran.IdIuran, &pembayaran.IdPemasukan, &pembayaran.Status, &pembayaran.JumlahBayar, &pembayaran.TanggalBayar)
 	if err != nil {
@@ -143,7 +151,8 @@ func (r *iuranRepositoryImpl) GetAllMembers(ctx context.Context, tx *sql.Tx) ([]
 			id_member,
 			nra,
 			nama,
-			status,
+			COALESCE(jabatan, 'anggota'),
+			COALESCE(status, 'aktif'),
 			created_at,
 			updated_at
 		FROM member ORDER BY id_member ASC
@@ -162,6 +171,7 @@ func (r *iuranRepositoryImpl) GetAllMembers(ctx context.Context, tx *sql.Tx) ([]
 			&member.IdMember,
 			&member.NRA,
 			&member.Nama,
+			&member.Jabatan,
 			&member.Status,
 			&member.CreatedAt,
 			&member.UpdatedAt,
@@ -255,6 +265,7 @@ func (i *iuranRepositoryImpl) GetIuranByMemberID(ctx context.Context, tx *sql.Tx
 		FROM pembayaran_iuran pi
 		LEFT JOIN iuran i ON pi.id_iuran = i.id_iuran
 		WHERE pi.id_member = ?
+		ORDER BY pi.created_at ASC
 	`
 
 	rows, err := tx.QueryContext(ctx, query, memberID)
@@ -324,7 +335,8 @@ func (i *iuranRepositoryImpl) GetMemberById(ctx context.Context, tx *sql.Tx, id_
 			m.id_member,
 			m.nra,
 			m.nama,
-			m.status,
+			COALESCE(m.jabatan, 'anggota'),
+			COALESCE(m.status, 'aktif'),
 			m.created_at,
 			m.updated_at,
 			pi.id_pembayaran,
@@ -338,6 +350,7 @@ func (i *iuranRepositoryImpl) GetMemberById(ctx context.Context, tx *sql.Tx, id_
 		LEFT JOIN pembayaran_iuran pi ON m.id_member = pi.id_member
 		LEFT JOIN iuran i ON pi.id_iuran = i.id_iuran
 		WHERE m.id_member = ?
+		ORDER BY pi.created_at ASC
 	`
 
 	rows, err := tx.QueryContext(ctx, query, id_member)
@@ -360,6 +373,7 @@ func (i *iuranRepositoryImpl) GetMemberById(ctx context.Context, tx *sql.Tx, id_
 			&member.IdMember,
 			&member.NRA,
 			&member.Nama,
+			&member.Jabatan,
 			&member.Status,
 			&member.CreatedAt,
 			&member.UpdatedAt,
@@ -400,6 +414,7 @@ func (r *iuranRepositoryImpl) GetIuranByPeriod(ctx context.Context, tx *sql.Tx, 
 	query := `
 		SELECT 
     		pi.id_pembayaran,
+    		pi.id_pemasukan,
     		pi.status,
 			pi.jumlah_bayar,
     		pi.tanggal_bayar,
@@ -426,12 +441,13 @@ func (r *iuranRepositoryImpl) GetIuranByPeriod(ctx context.Context, tx *sql.Tx, 
 	for rows.Next() {
 		var pembayaran model.PembayaranIuran
 		var iuran model.Iuran
-		var idPembayaran, statusPembayaran sql.NullString
+		var idPembayaran, idPemasukan, statusPembayaran sql.NullString
 		var tanggalBayar sql.NullTime
 		var idMember, idIuran, periode sql.NullString
 		var mingguKe, jumlah_bayar sql.NullInt64
 		err := rows.Scan(
 			&idPembayaran,
+			&idPemasukan,
 			&statusPembayaran,
 			&jumlah_bayar,
 			&tanggalBayar,
@@ -444,6 +460,7 @@ func (r *iuranRepositoryImpl) GetIuranByPeriod(ctx context.Context, tx *sql.Tx, 
 			return iurans, err
 		}
 		pembayaran.IdPembayaran = idPembayaran
+		pembayaran.IdPemasukan = idPemasukan
 		pembayaran.Status = statusPembayaran
 		pembayaran.JumlahBayar = jumlah_bayar
 		pembayaran.TanggalBayar = tanggalBayar
@@ -487,9 +504,14 @@ func (r *iuranRepositoryImpl) GetIuranByPeriodOnly(ctx context.Context, tx *sql.
 // UpdateIuran implements IuranRepository.
 func (r *iuranRepositoryImpl) UpdateStatusIuran(ctx context.Context, tx *sql.Tx, pembayaran model.PembayaranIuran, member model.Member) (model.PembayaranIuran, error) {
 	// PERBAIKAN: Update pembayaran_iuran langsung tanpa JOIN yang tidak perlu
-	query := "UPDATE pembayaran_iuran SET status = ?, tanggal_bayar = ?, jumlah_bayar = ? WHERE id_member = ? AND id_iuran = ?"
-
-	_, err := tx.ExecContext(ctx, query, pembayaran.Status, pembayaran.TanggalBayar, pembayaran.JumlahBayar, pembayaran.IdMember, pembayaran.Iuran.IdIuran)
+	var err error
+	if pembayaran.IdPembayaran.Valid && pembayaran.IdPembayaran.String != "" {
+		query := "UPDATE pembayaran_iuran SET status = ?, tanggal_bayar = ?, jumlah_bayar = ? WHERE id_pembayaran = ?"
+		_, err = tx.ExecContext(ctx, query, pembayaran.Status, pembayaran.TanggalBayar, pembayaran.JumlahBayar, pembayaran.IdPembayaran)
+	} else {
+		query := "UPDATE pembayaran_iuran SET status = ?, tanggal_bayar = ?, jumlah_bayar = ? WHERE id_member = ? AND id_iuran = ?"
+		_, err = tx.ExecContext(ctx, query, pembayaran.Status, pembayaran.TanggalBayar, pembayaran.JumlahBayar, pembayaran.IdMember, pembayaran.Iuran.IdIuran)
+	}
 	if err != nil {
 		return model.PembayaranIuran{}, err
 	}
@@ -515,7 +537,10 @@ func (r *iuranRepositoryImpl) UpdateStatusIuran(ctx context.Context, tx *sql.Tx,
 	tanggalStr := string(tanggalRaw)
 	oldTanggal, err := time.Parse(time.RFC3339, tanggalStr)
 	if err != nil {
-		return model.PembayaranIuran{}, fmt.Errorf("failed to parse old tanggal: %v", err)
+		oldTanggal, err = time.Parse("2006-01-02 15:04:05", tanggalStr)
+		if err != nil {
+			return model.PembayaranIuran{}, fmt.Errorf("failed to parse old tanggal: %v", err)
+		}
 	}
 
 	// Hitung selisih nominal
@@ -598,7 +623,7 @@ func (r *iuranRepositoryImpl) UpdateStatusIuran(ctx context.Context, tx *sql.Tx,
 		querySaldo := `
 			SELECT saldo FROM laporan_keuangan 
 			WHERE tanggal <= ?
-			ORDER BY tanggal DESC
+			ORDER BY tanggal DESC, saldo DESC
 			LIMIT 1
 		`
 		err = tx.QueryRowContext(ctx, querySaldo, pembayaran.TanggalBayar).Scan(&saldoSebelumnya)
@@ -636,98 +661,103 @@ func (r *iuranRepositoryImpl) UpdateStatusIuran(ctx context.Context, tx *sql.Tx,
 	return pembayaran, nil
 }
 
-// DeleteMember implements IuranRepository.
+// PelunasanIuran mencatat pembayaran tambahan/pelunasan iuran tanpa mengubah data pembayaran awal.
+func (r *iuranRepositoryImpl) PelunasanIuran(ctx context.Context, tx *sql.Tx, pembayaran model.PembayaranIuran, member model.Member, nominalTambahan int64) (model.PembayaranIuran, error) {
+	// 1. Update pembayaran_iuran (status baru, tanggal bayar baru, total jumlah_bayar baru)
+	var err error
+	if pembayaran.IdPembayaran.Valid && pembayaran.IdPembayaran.String != "" {
+		query := "UPDATE pembayaran_iuran SET status = ?, tanggal_bayar = ?, jumlah_bayar = ? WHERE id_pembayaran = ?"
+		_, err = tx.ExecContext(ctx, query, pembayaran.Status, pembayaran.TanggalBayar, pembayaran.JumlahBayar, pembayaran.IdPembayaran)
+	} else {
+		query := "UPDATE pembayaran_iuran SET status = ?, tanggal_bayar = ?, jumlah_bayar = ? WHERE id_member = ? AND id_iuran = ?"
+		_, err = tx.ExecContext(ctx, query, pembayaran.Status, pembayaran.TanggalBayar, pembayaran.JumlahBayar, pembayaran.IdMember, pembayaran.Iuran.IdIuran)
+	}
+	if err != nil {
+		return model.PembayaranIuran{}, fmt.Errorf("failed to update pembayaran_iuran: %v", err)
+	}
+
+	// 2. Keterangan untuk transaksi tambahan sesuai permintaan user:
+	// "Tambahan pembayaran iuran periode <periode> - minggu ke <minggu> dari <nama> (<nra>)"
+	keterangan := fmt.Sprintf("Tambahan pembayaran iuran periode %s - minggu ke %d dari %s (%s)", pembayaran.Iuran.Periode.String, pembayaran.Iuran.MingguKe.Int64, member.Nama, member.NRA)
+
+	// 3. Insert ke history_transaksi
+	idTransaksi := uuid.New().String()
+	queryTransaksi := `INSERT INTO history_transaksi (id_transaksi, tanggal, keterangan, jenis_transaksi, nominal) VALUES (?, ?, ?, ?, ?)`
+	_, err = tx.ExecContext(ctx, queryTransaksi, idTransaksi, pembayaran.TanggalBayar.Time, keterangan, "Pemasukan", nominalTambahan)
+	if err != nil {
+		return model.PembayaranIuran{}, fmt.Errorf("failed to insert history_transaksi: %v", err)
+	}
+
+	// 4. Insert ke pemasukan
+	idPemasukanBaru := uuid.New().String()
+	queryPemasukan := `INSERT INTO pemasukan (id_pemasukan, tanggal, kategori, keterangan, nominal, nota, id_transaksi) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	_, err = tx.ExecContext(ctx, queryPemasukan, idPemasukanBaru, pembayaran.TanggalBayar.Time, "Iuran", keterangan, nominalTambahan, "no data", idTransaksi)
+	if err != nil {
+		return model.PembayaranIuran{}, fmt.Errorf("failed to insert pemasukan: %v", err)
+	}
+
+	// 5. Ambil saldo terakhir sebelum tanggal transaksi baru
+	var saldoSebelumnya uint64
+	querySaldo := `
+		SELECT saldo FROM laporan_keuangan 
+		WHERE tanggal <= ?
+		ORDER BY tanggal DESC, saldo DESC
+		LIMIT 1
+	`
+	err = tx.QueryRowContext(ctx, querySaldo, pembayaran.TanggalBayar).Scan(&saldoSebelumnya)
+	if err != nil && err != sql.ErrNoRows {
+		return model.PembayaranIuran{}, fmt.Errorf("failed to fetch previous saldo: %v", err)
+	}
+
+	// 6. Hitung saldo baru
+	saldoBaru := saldoSebelumnya + uint64(nominalTambahan)
+
+	// 7. Insert ke laporan_keuangan
+	idLaporan := uuid.New().String()
+	queryLaporan := `INSERT INTO laporan_keuangan (id_laporan, tanggal, keterangan, pemasukan, pengeluaran, saldo, id_transaksi) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	_, err = tx.ExecContext(ctx, queryLaporan, idLaporan, pembayaran.TanggalBayar.Time, keterangan, nominalTambahan, 0, saldoBaru, idTransaksi)
+	if err != nil {
+		return model.PembayaranIuran{}, fmt.Errorf("failed to insert laporan_keuangan: %v", err)
+	}
+
+	// 8. Update saldo semua entri laporan_keuangan setelah tanggal transaksi baru
+	queryUpdateFuture := `
+		UPDATE laporan_keuangan 
+		SET saldo = saldo + ? 
+		WHERE tanggal > ?
+	`
+	_, err = tx.ExecContext(ctx, queryUpdateFuture, nominalTambahan, pembayaran.TanggalBayar)
+	if err != nil {
+		return model.PembayaranIuran{}, fmt.Errorf("failed to update future saldo: %v", err)
+	}
+
+	pembayaran.IdPemasukan = sql.NullString{String: idPemasukanBaru, Valid: true}
+	pembayaran.IdTransaksi = sql.NullString{String: idTransaksi, Valid: true}
+	return pembayaran, nil
+}
+
+// DeleteMember implements IuranRepository (soft delete / set member status to nonaktif).
 func (r *iuranRepositoryImpl) DeleteMember(ctx context.Context, tx *sql.Tx, id_member string) error {
-	// PERBAIKAN: Hapus semua data terkait dengan member
-
-	// 1. Ambil semua pembayaran iuran dari member ini untuk rollback laporan keuangan
-	getPembayaran, err := r.GetIuranByMemberID(ctx, tx, id_member)
+	query := "UPDATE member SET status = 'nonaktif', updated_at = NOW() WHERE id_member = ?"
+	_, err := tx.ExecContext(ctx, query, id_member)
 	if err != nil {
-		return fmt.Errorf("failed to get pembayaran iuran for member: %v", err)
+		return fmt.Errorf("failed to deactivate member: %v", err)
 	}
+	return nil
+}
 
-	// 2. Untuk setiap pembayaran, rollback laporan keuangan
-	for _, pembayaran := range getPembayaran {
-		if pembayaran.IdPemasukan.Valid {
-			// Ambil data pemasukan untuk mendapatkan nominal dan tanggal
-			var nominal uint64
-			var tanggalRaw []byte
-			var idTransaksi string
-			queryFetch := `
-				SELECT nominal, tanggal, id_transaksi 
-				FROM pemasukan 
-				WHERE id_pemasukan = ?
-			`
-			err = tx.QueryRowContext(ctx, queryFetch, pembayaran.IdPemasukan.String).Scan(&nominal, &tanggalRaw, &idTransaksi)
-			if err != nil && err != sql.ErrNoRows {
-				return fmt.Errorf("failed to fetch pemasukan data: %v", err)
-			}
-
-			if err != sql.ErrNoRows {
-				// Parse tanggal
-				tanggalStr := string(tanggalRaw)
-				tanggalTime, err := time.Parse(time.RFC3339, tanggalStr)
-				if err != nil {
-					return fmt.Errorf("failed to parse tanggal: %v", err)
-				}
-
-				// Hapus dari laporan_keuangan
-				queryDeleteLaporan := `
-					DELETE FROM laporan_keuangan 
-					WHERE id_transaksi = ?
-				`
-				_, err = tx.ExecContext(ctx, queryDeleteLaporan, idTransaksi)
-				if err != nil {
-					return fmt.Errorf("failed to delete from laporan_keuangan: %v", err)
-				}
-
-				// Update saldo untuk semua record setelah tanggal ini (kurangi nominal)
-				queryUpdateSaldo := `
-					UPDATE laporan_keuangan
-					SET saldo = saldo - ?
-					WHERE tanggal > ?
-				`
-				_, err = tx.ExecContext(ctx, queryUpdateSaldo, nominal, tanggalTime)
-				if err != nil {
-					return fmt.Errorf("failed to update future saldo: %v", err)
-				}
-
-				// Hapus dari history_transaksi
-				queryDeleteHistory := `
-					DELETE FROM history_transaksi 
-					WHERE id_transaksi = ?
-				`
-				_, err = tx.ExecContext(ctx, queryDeleteHistory, idTransaksi)
-				if err != nil {
-					return fmt.Errorf("failed to delete from history_transaksi: %v", err)
-				}
-
-				// Hapus dari pemasukan
-				queryDeletePemasukan := `
-					DELETE FROM pemasukan 
-					WHERE id_pemasukan = ?
-				`
-				_, err = tx.ExecContext(ctx, queryDeletePemasukan, pembayaran.IdPemasukan.String)
-				if err != nil {
-					return fmt.Errorf("failed to delete from pemasukan: %v", err)
-				}
-			}
-		}
+// ReactivateMember implements IuranRepository (reactivate member status to aktif).
+func (r *iuranRepositoryImpl) ReactivateMember(ctx context.Context, tx *sql.Tx, id_member string, status string) error {
+	var err error
+	if status == "bph" || status == "anggota" {
+		query := "UPDATE member SET status = 'aktif', jabatan = ?, updated_at = NOW() WHERE id_member = ?"
+		_, err = tx.ExecContext(ctx, query, status, id_member)
+	} else {
+		query := "UPDATE member SET status = 'aktif', updated_at = NOW() WHERE id_member = ?"
+		_, err = tx.ExecContext(ctx, query, id_member)
 	}
-
-	// 3. Hapus semua pembayaran_iuran dari member ini
-	queryDeletePembayaran := "DELETE FROM pembayaran_iuran WHERE id_member = ?"
-	_, err = tx.ExecContext(ctx, queryDeletePembayaran, id_member)
 	if err != nil {
-		return fmt.Errorf("failed to delete pembayaran_iuran: %v", err)
+		return fmt.Errorf("failed to reactivate member: %v", err)
 	}
-
-	// 4. Terakhir hapus member
-	queryDeleteMember := "DELETE FROM member WHERE id_member = ?"
-	_, err = tx.ExecContext(ctx, queryDeleteMember, id_member)
-	if err != nil {
-		return fmt.Errorf("failed to delete member: %v", err)
-	}
-
 	return nil
 }

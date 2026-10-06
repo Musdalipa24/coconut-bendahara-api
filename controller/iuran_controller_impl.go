@@ -17,6 +17,7 @@ type IuranController interface {
 	GetMemberById(w http.ResponseWriter, r *http.Request, ps httprouter.Params)
 	UpdateIuran(w http.ResponseWriter, r *http.Request, ps httprouter.Params)
 	DeleteMember(w http.ResponseWriter, r *http.Request, ps httprouter.Params)
+	ReactivateMember(w http.ResponseWriter, r *http.Request, ps httprouter.Params)
 }
 
 type IuranControllerImpl struct {
@@ -87,7 +88,7 @@ func (i *IuranControllerImpl) UpdateIuran(w http.ResponseWriter, r *http.Request
 	helper.WriteJSONSuccess(w, responseDTO, code, "successfully updated iuran")
 }
 
-// DeleteMember implements IuranController.
+// DeleteMember implements IuranController (soft delete / deactivation).
 func (i *IuranControllerImpl) DeleteMember(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	id := ps.ByName("id_member")
 
@@ -97,5 +98,29 @@ func (i *IuranControllerImpl) DeleteMember(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	helper.WriteJSONSuccess(w, nil, code, "successfully deleted member")
+	helper.WriteJSONSuccess(w, nil, code, "successfully deactivated member")
+}
+
+// ReactivateMember implements IuranController.
+func (i *IuranControllerImpl) ReactivateMember(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	id := ps.ByName("id_member")
+
+	var req struct {
+		Status string `json:"status"`
+	}
+	_ = util.ReadFromRequestBody(r, &req)
+	if req.Status == "" {
+		req.Status = r.URL.Query().Get("status")
+	}
+	if req.Status == "" {
+		req.Status = "anggota"
+	}
+
+	code, err := i.IuranService.ReactivateMember(r.Context(), id, req.Status)
+	if err != nil {
+		helper.WriteJSONError(w, code, err.Error())
+		return
+	}
+
+	helper.WriteJSONSuccess(w, nil, code, "successfully reactivated member")
 }

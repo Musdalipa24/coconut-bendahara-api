@@ -86,13 +86,13 @@ type Claims struct {
 }
 
 func (a adminServiceImpl) GenerateJWT(username string) (string, error) {
-	err := godotenv.Load()
-	if err != nil {
-		panic(err)
-	}
+	_ = godotenv.Load()
 
 	jwtKey := os.Getenv("JWT_SECRET")
-	expirationTime := time.Now().Add(5 * time.Minute)
+	if jwtKey == "" {
+		jwtKey = "sementara123!"
+	}
+	expirationTime := time.Now().Add(24 * time.Hour)
 
 	claims := &Claims{
 		Username: username,

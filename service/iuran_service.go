@@ -27,6 +27,7 @@ type IuranService interface {
 	GetMemberById(ctx context.Context, id string) (dto.MemberResponse, int, error)
 	UpdateIuran(ctx context.Context, pembayaranReq dto.IuranRequest, id_member string) (dto.IuranResponse, int, error)
 	DeleteMember(ctx context.Context, id_member string) (int, error)
+	ReactivateMember(ctx context.Context, id_member string, status string) (int, error)
 }
 
 type iuranService struct {
@@ -49,11 +50,25 @@ func (i *iuranService) CreateMember(ctx context.Context, memberReq dto.MemberReq
 	}
 	defer tx.Rollback()
 
+	jabatan := memberReq.Jabatan
+	if jabatan == "" && (memberReq.Status == "bph" || memberReq.Status == "anggota") {
+		jabatan = memberReq.Status
+	}
+	if jabatan == "" {
+		jabatan = "anggota"
+	}
+
+	status := memberReq.Status
+	if status != "aktif" && status != "nonaktif" {
+		status = "aktif"
+	}
+
 	member := model.Member{
 		IdMember: uuid.New().String(),
 		NRA:      memberReq.NRA,
 		Nama:     memberReq.Nama,
-		Status:   memberReq.Status,
+		Jabatan:  jabatan,
+		Status:   status,
 	}
 
 	addedMember, err := i.IuranRepo.AddMember(ctx, tx, member)
@@ -164,6 +179,10 @@ func (i *iuranService) UpdateIuran(ctx context.Context, pembayaranReq dto.IuranR
 		return dto.IuranResponse{}, http.StatusBadRequest, fmt.Errorf("member not found")
 	}
 
+	if getMember.Status == "inactive" || getMember.Status == "nonaktif" {
+		return dto.IuranResponse{}, http.StatusBadRequest, fmt.Errorf("member is inactive/nonaktif and cannot update iuran")
+	}
+
 	var iuran model.Iuran
 	var pembayaran model.PembayaranIuran // Declare outside to use in return
 	if len(getPembayaran) == 0 {
@@ -213,19 +232,35 @@ func (i *iuranService) UpdateIuran(ctx context.Context, pembayaranReq dto.IuranR
 		}
 		return util.ConvertIuranToResponseDTO(pembayaran), http.StatusCreated, nil
 	} else {
-		getPemb, err := i.IuranRepo.GetPembayaranById(ctx, tx, pembayaran, getMember.IdMember)
-		if err != nil {
-			return dto.IuranResponse{}, http.StatusInternalServerError, err
-		}
-
 		// Update existing pembayaran
 		existing := getPembayaran[0]
+		idPemasukan := existing.IdPemasukan
+		if !idPemasukan.Valid || idPemasukan.String == "" {
+			// Fallback: jika IdPemasukan kosong, cari menggunakan idPembayaran yang unik
+			getPemb, err := i.IuranRepo.GetPembayaranById(ctx, tx, existing, existing.IdPembayaran.String)
+			if err == nil && getPemb.IdPemasukan.Valid {
+				idPemasukan = getPemb.IdPemasukan
+			}
+		}
+
+		// Tentukan total target bayar
+		var totalTargetBayar int64
+		if pembayaranReq.Status == STATUS_LUNAS {
+			totalTargetBayar = IURAN_NOMINAL_PENUH
+		} else {
+			totalTargetBayar = pembayaranReq.JumlahBayar
+		}
+
+		// Hitung sisa yang belum dibayar (nominal tambahan pembayaran)
+		nominalTambahan := totalTargetBayar - existing.JumlahBayar.Int64
+
 		pembayaran = model.PembayaranIuran{
 			IdPembayaran: existing.IdPembayaran,
 			IdMember:     sql.NullString{String: id_member, Valid: true},
-			IdPemasukan:  getPemb.IdPemasukan,
+			IdPemasukan:  idPemasukan,
 			Status:       sql.NullString{String: pembayaranReq.Status, Valid: true},
 			TanggalBayar: sql.NullTime{Time: tanggalBayar, Valid: true},
+			JumlahBayar:  sql.NullInt64{Int64: totalTargetBayar, Valid: true},
 			Iuran: model.Iuran{
 				IdIuran:  existing.Iuran.IdIuran,
 				Periode:  existing.Iuran.Periode,
@@ -233,18 +268,22 @@ func (i *iuranService) UpdateIuran(ctx context.Context, pembayaranReq dto.IuranR
 			},
 		}
 
-		// PERBAIKAN: Logic business untuk nilai iuran
-		if pembayaranReq.Status == STATUS_LUNAS {
-			// Jika status lunas, otomatis isi dengan nominal penuh iuran
-			pembayaran.JumlahBayar = sql.NullInt64{Int64: IURAN_NOMINAL_PENUH, Valid: true}
+		var updatedPembayaran model.PembayaranIuran
+		if nominalTambahan > 0 {
+			// Jika ada sisa pembayaran yang dibayar (pelunasan / tambahan bayar):
+			// JANGAN update/hapus data pemasukan lama!
+			// Catat transaksi pemasukan baru sebesar nominalTambahan di tanggal baru dengan
+			// keterangan: "Tambahan pembayaran iuran periode ...", dan update status iuran.
+			updatedPembayaran, err = i.IuranRepo.PelunasanIuran(ctx, tx, pembayaran, getMember, nominalTambahan)
+			if err != nil {
+				return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to process pelunasan iuran: %v", err)
+			}
 		} else {
-			// Jika status belum lunas, gunakan nilai yang diinput user
-			pembayaran.JumlahBayar = sql.NullInt64{Int64: pembayaranReq.JumlahBayar, Valid: true}
-		}
-
-		updatedPembayaran, err := i.IuranRepo.UpdateStatusIuran(ctx, tx, pembayaran, getMember)
-		if err != nil {
-			return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to update iuran status: %v", err)
+			// Jika tidak ada tambahan nominal (misal hanya koreksi data tanggal tanpa tambahan uang)
+			updatedPembayaran, err = i.IuranRepo.UpdateStatusIuran(ctx, tx, pembayaran, getMember)
+			if err != nil {
+				return dto.IuranResponse{}, http.StatusInternalServerError, fmt.Errorf("failed to update iuran status: %v", err)
+			}
 		}
 
 		if err := tx.Commit(); err != nil {
@@ -254,7 +293,7 @@ func (i *iuranService) UpdateIuran(ctx context.Context, pembayaranReq dto.IuranR
 	}
 }
 
-// DeleteMember implements IuranService.
+// DeleteMember implements IuranService (soft delete / set member status to inactive).
 func (i *iuranService) DeleteMember(ctx context.Context, id_member string) (int, error) {
 	tx, err := i.DB.Begin()
 	if err != nil {
@@ -273,12 +312,41 @@ func (i *iuranService) DeleteMember(ctx context.Context, id_member string) (int,
 
 	err = i.IuranRepo.DeleteMember(ctx, tx, id_member)
 	if err != nil {
-		return http.StatusInternalServerError, fmt.Errorf("failed to delete member: %v", err)
+		return http.StatusInternalServerError, fmt.Errorf("failed to deactivate member: %v", err)
 	}
 
 	if err := tx.Commit(); err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("failed to commit transaction: %v", err)
 	}
 
-	return http.StatusNoContent, nil
+	return http.StatusOK, nil
+}
+
+// ReactivateMember implements IuranService (reactivate member status to bph or anggota).
+func (i *iuranService) ReactivateMember(ctx context.Context, id_member string, status string) (int, error) {
+	tx, err := i.DB.Begin()
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("failed to start transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	member, err := i.IuranRepo.GetMemberById(ctx, tx, id_member)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("failed to get member by ID: %v", err)
+	}
+
+	if member.IdMember == "" {
+		return http.StatusBadRequest, fmt.Errorf("member not found")
+	}
+
+	err = i.IuranRepo.ReactivateMember(ctx, tx, id_member, status)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("failed to reactivate member: %v", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	return http.StatusOK, nil
 }

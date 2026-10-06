@@ -12,6 +12,8 @@ import (
 type LaporanKeuanganRepo interface {
 	GetAllLaporan(ctx context.Context, tx *sql.Tx) ([]model.LaporanKeuangan, error)
 	GetLastBalance(ctx context.Context, tx *sql.Tx) (int64, error)
+	GetTotalIncome(ctx context.Context, tx *sql.Tx) (uint64, error)
+	GetTotalExpenditure(ctx context.Context, tx *sql.Tx) (uint64, error)
 	GetLaporanByDateRange(ctx context.Context, tx *sql.Tx, startDate string, endDate string) ([]model.LaporanKeuangan, error)
 }
 
@@ -25,7 +27,7 @@ func NewLaporanKeuanganRepo() LaporanKeuanganRepo {
 // GetAllLaporan implements LaporanKeuanganRepo.
 func (l *laporanKeuanganRepoImpl) GetAllLaporan(ctx context.Context, tx *sql.Tx) ([]model.LaporanKeuangan, error) {
 	var laporans []model.LaporanKeuangan
-	query := "SELECT id_laporan, tanggal, keterangan, pemasukan, pengeluaran, saldo FROM laporan_keuangan ORDER BY tanggal DESC"
+	query := "SELECT id_laporan, tanggal, keterangan, pemasukan, pengeluaran, saldo FROM laporan_keuangan ORDER BY tanggal DESC, saldo DESC"
 	rows, err := tx.QueryContext(ctx, query)
 	if err != nil {
 		return laporans, err
@@ -62,16 +64,16 @@ func (l *laporanKeuanganRepoImpl) GetAllLaporan(ctx context.Context, tx *sql.Tx)
 	return laporans, nil
 }
 
-// GetLastBalance implements LaporanKeuanganRepo.
+// GetLastBalance implements LaporanKeuanganRepo by calculating Total Income - Total Expenditure.
 func (l *laporanKeuanganRepoImpl) GetLastBalance(ctx context.Context, tx *sql.Tx) (int64, error) {
-	var laporans model.LaporanKeuangan
-	query := "SELECT saldo FROM laporan_keuangan ORDER BY tanggal DESC LIMIT 1"
-	err := tx.QueryRowContext(ctx, query).Scan(&laporans.Saldo)
+	var totalIncome, totalExpenditure sql.NullInt64
+	query := "SELECT COALESCE(SUM(pemasukan), 0), COALESCE(SUM(pengeluaran), 0) FROM laporan_keuangan"
+	err := tx.QueryRowContext(ctx, query).Scan(&totalIncome, &totalExpenditure)
 	if err != nil && err != sql.ErrNoRows {
 		tx.Rollback()
-		return laporans.Saldo, fmt.Errorf("failed to fetch previous saldo: %v", err)
+		return 0, fmt.Errorf("failed to fetch previous saldo: %v", err)
 	}
-	return laporans.Saldo, nil
+	return totalIncome.Int64 - totalExpenditure.Int64, nil
 }
 
 // GetLaporanByDateRange mengambil data laporan keuangan berdasarkan rentang tanggal
@@ -79,7 +81,7 @@ func (l *laporanKeuanganRepoImpl) GetLaporanByDateRange(ctx context.Context, tx 
 	var laporans []model.LaporanKeuangan
 
 	// Query dengan filter rentang tanggal
-	query := `SELECT id_laporan, tanggal, keterangan, pemasukan, pengeluaran, saldo FROM laporan_keuangan WHERE tanggal BETWEEN ? AND ? ORDER BY tanggal ASC`
+	query := `SELECT id_laporan, tanggal, keterangan, pemasukan, pengeluaran, saldo FROM laporan_keuangan WHERE tanggal BETWEEN ? AND ? ORDER BY tanggal ASC, saldo ASC`
 
 	// Eksekusi query dengan parameter startDate dan endDate
 	rows, err := tx.QueryContext(ctx, query, startDate, endDate)
@@ -114,4 +116,32 @@ func (l *laporanKeuanganRepoImpl) GetLaporanByDateRange(ctx context.Context, tx 
 	}
 
 	return laporans, nil
+}
+
+// GetTotalIncome implements LaporanKeuanganRepo using SQL SUM.
+func (l *laporanKeuanganRepoImpl) GetTotalIncome(ctx context.Context, tx *sql.Tx) (uint64, error) {
+	var total sql.NullInt64
+	query := "SELECT COALESCE(SUM(pemasukan), 0) FROM laporan_keuangan"
+	err := tx.QueryRowContext(ctx, query).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("failed to fetch total income: %v", err)
+	}
+	if total.Valid && total.Int64 > 0 {
+		return uint64(total.Int64), nil
+	}
+	return 0, nil
+}
+
+// GetTotalExpenditure implements LaporanKeuanganRepo using SQL SUM.
+func (l *laporanKeuanganRepoImpl) GetTotalExpenditure(ctx context.Context, tx *sql.Tx) (uint64, error) {
+	var total sql.NullInt64
+	query := "SELECT COALESCE(SUM(pengeluaran), 0) FROM laporan_keuangan"
+	err := tx.QueryRowContext(ctx, query).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("failed to fetch total expenditure: %v", err)
+	}
+	if total.Valid && total.Int64 > 0 {
+		return uint64(total.Int64), nil
+	}
+	return 0, nil
 }

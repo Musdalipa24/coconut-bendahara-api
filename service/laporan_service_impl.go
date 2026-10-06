@@ -71,14 +71,9 @@ func (l *laporanKeuanganServiceImpl) GetTotalExpenditure(ctx context.Context) (u
 	}
 	defer util.CommitOrRollBack(tx)
 
-	laporan, err := l.LaporanRepo.GetAllLaporan(ctx, tx)
+	totalPengeluaran, err := l.LaporanRepo.GetTotalExpenditure(ctx, tx)
 	if err != nil {
-		return 0, http.StatusInternalServerError, fmt.Errorf("failed to get financial statements")
-	}
-
-	var totalPengeluaran uint64
-	for _, data := range laporan {
-		totalPengeluaran += data.Pengeluaran
+		return 0, http.StatusInternalServerError, fmt.Errorf("failed to get total expenditure: %v", err)
 	}
 
 	return totalPengeluaran, http.StatusOK, nil
@@ -92,14 +87,9 @@ func (l *laporanKeuanganServiceImpl) GetTotalIncome(ctx context.Context) (uint64
 	}
 	defer util.CommitOrRollBack(tx)
 
-	laporan, err := l.LaporanRepo.GetAllLaporan(ctx, tx)
+	totalPemasukan, err := l.LaporanRepo.GetTotalIncome(ctx, tx)
 	if err != nil {
-		return 0, http.StatusInternalServerError, fmt.Errorf("failed to get financial statements")
-	}
-
-	var totalPemasukan uint64
-	for _, data := range laporan {
-		totalPemasukan += data.Pemasukan
+		return 0, http.StatusInternalServerError, fmt.Errorf("failed to get total income: %v", err)
 	}
 
 	return totalPemasukan, http.StatusOK, nil

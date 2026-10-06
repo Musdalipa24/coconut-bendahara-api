@@ -85,9 +85,8 @@ func (s *pemasukanControllerImpl) GetPemasukan(w http.ResponseWriter, r *http.Re
 	}
 
 	if err != nil {
-		// helper.WriteJSONError(w, code, err.Error())
-		// return
-		panic(err)
+		helper.WriteJSONError(w, code, err.Error())
+		return
 	}
 	helper.WriteJSONSuccess(w, responseDTO, code, "successfully get pemasukan with pagination")
 }

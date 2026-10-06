@@ -60,42 +60,42 @@ func (s *pengeluaranServiceImpl) AddPengeluaran(ctx context.Context, r *http.Req
 		Keterangan: r.FormValue("keterangan"),
 	}
 
-	// Ambil file dari form
+	// Ambil file dari form (opsional)
+	var fileName string
 	file, handler, err := r.FormFile("nota")
-	if err != nil {
-		return dto.PengeluaranResponse{}, fmt.Errorf("failed to read file: %v", err)
+	if err == nil && file != nil {
+		defer file.Close()
+
+		// Format tanggal dan waktu untuk nama file
+		formattedDateTime := tanggalWaktu.Format("2006-01-02-15-04") // Format: YYYY-MM-DD-HH-MM
+
+		// Buat nama file dengan format: tanggal-waktu-uuid
+		fileName = fmt.Sprintf("%s-%s.jpeg", formattedDateTime, uuid.New().String())
+		handler.Filename = fileName
+
+		// Buat direktori upload jika belum ada
+		uploadDir := "./uploads"
+		if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+			os.Mkdir(uploadDir, os.ModePerm)
+		}
+
+		// Simpan file ke direktori upload
+		filePath := filepath.Join(uploadDir, handler.Filename)
+		out, err := os.Create(filePath)
+		if err != nil {
+			return dto.PengeluaranResponse{}, fmt.Errorf("failed to create file: %v", err)
+		}
+		defer out.Close()
+
+		// Salin file yang diunggah ke file yang baru dibuat
+		_, err = io.Copy(out, file)
+		if err != nil {
+			return dto.PengeluaranResponse{}, fmt.Errorf("failed to copy file: %v", err)
+		}
+
+		// Simpan nama file ke dalam request
+		pengeluaranRequest.Nota = handler.Filename
 	}
-	defer file.Close()
-
-	// Format tanggal dan waktu untuk nama file
-	formattedDateTime := tanggalWaktu.Format("2006-01-02-15-04") // Format: YYYY-MM-DD-HH-MM
-
-	// Buat nama file dengan format: tanggal-waktu-uuid
-	fileName := fmt.Sprintf("%s-%s.jpeg", formattedDateTime, uuid.New().String())
-	handler.Filename = fileName
-
-	// Buat direktori upload jika belum ada
-	uploadDir := "./uploads"
-	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
-		os.Mkdir(uploadDir, os.ModePerm)
-	}
-
-	// Simpan file ke direktori upload
-	filePath := filepath.Join(uploadDir, handler.Filename)
-	out, err := os.Create(filePath)
-	if err != nil {
-		return dto.PengeluaranResponse{}, fmt.Errorf("failed to create file: %v", err)
-	}
-	defer out.Close()
-
-	// Salin file yang diunggah ke file yang baru dibuat
-	_, err = io.Copy(out, file)
-	if err != nil {
-		return dto.PengeluaranResponse{}, fmt.Errorf("failed to copy file: %v", err)
-	}
-
-	// Simpan nama file ke dalam request
-	pengeluaranRequest.Nota = handler.Filename
 
 	// Konversi nominal dari string ke integer
 	nominal, err := (strconv.Atoi(r.FormValue("nominal")))

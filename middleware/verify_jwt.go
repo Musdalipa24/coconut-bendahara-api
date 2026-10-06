@@ -13,22 +13,28 @@ import (
 )
 
 func VerifyJWT(next httprouter.Handle) httprouter.Handle {
-	err := godotenv.Load()
-	if err != nil {
-		panic(err)
-	}
+	_ = godotenv.Load()
 
 	jwtKey := os.Getenv("JWT_SECRET")
+	if jwtKey == "" {
+		jwtKey = "sementara123!"
+	}
+
 	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+		tokenString := ""
 		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			helper.WriteJSONError(w, http.StatusUnauthorized, "missing authorization header")
-			return
+		if authHeader != "" {
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+			} else {
+				tokenString = authHeader
+			}
+		} else if cookie, err := r.Cookie("authToken"); err == nil && cookie.Value != "" {
+			tokenString = cookie.Value
 		}
 
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		if tokenString == authHeader {
-			helper.WriteJSONError(w, http.StatusUnauthorized, "invalid token format")
+		if tokenString == "" {
+			helper.WriteJSONError(w, http.StatusUnauthorized, "missing authorization token")
 			return
 		}
 

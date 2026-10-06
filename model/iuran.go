@@ -23,6 +23,7 @@ type Member struct {
 	IdMember         string
 	NRA              string
 	Nama             string
+	Jabatan          string
 	Status           string
 	CreatedAt        string
 	UpdatedAt        string

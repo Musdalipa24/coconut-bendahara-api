@@ -15,6 +15,7 @@ func ConvertMemberToResponseDTO(member model.Member) dto.MemberResponse {
 		IdMember:  member.IdMember,
 		NRA:       member.NRA,
 		Nama:      member.Nama,
+		Jabatan:   member.Jabatan,
 		Status:    member.Status,
 		Iuran:     iuranResponses,
 		CreatedAt: member.CreatedAt,
